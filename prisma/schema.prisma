@@ -1,0 +1,300 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Papéis da aplicação.
+enum Role {
+  ADMIN
+  CONTADOR
+  OPERADOR
+}
+
+/// Status de execuções de sincronização.
+enum SyncStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+/// Ações auditadas.
+enum AuditAction {
+  LOGIN
+  EXPORT
+  SYNC
+}
+
+model User {
+  id           String            @id @default(uuid())
+  email        String            @unique
+  passwordHash String
+  name         String?
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  roles        UserCompanyRole[]
+  auditLogs    AuditLog[]        @relation("AuditActor")
+  syncRuns     SyncRun[]         @relation("SyncTriggeredBy")
+}
+
+model Company {
+  id           String                   @id @default(uuid())
+  name         String
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  users        UserCompanyRole[]
+  connections  TinyConnection[]
+  syncRuns     SyncRun[]
+  syncCursors  SyncCursor[]
+  auditLogs    AuditLog[]
+  rawPayloads  RawPayload[]
+  vwVendas     VwVendas[]
+  vwCRPosicao  VwContasReceberPosicao[]
+  vwCPagar     VwContasPagar[]
+  vwCPagas     VwContasPagas[]
+  vwEstoque    VwEstoque[]
+  vwCRecebidas VwContasRecebidas[]
+}
+
+model UserCompanyRole {
+  id        String  @id @default(uuid())
+  userId    String
+  companyId String
+  role      Role
+  user      User    @relation(fields: [userId], references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([role])
+}
+
+model TinyConnection {
+  id              String    @id @default(uuid())
+  companyId       String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  tokenType       String?
+  scope           String?
+  expiresAt       DateTime?
+  accountId       String?
+  accountName     String?
+  tokenMeta       Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  company         Company   @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model SyncRun {
+  id                String     @id @default(uuid())
+  companyId         String
+  status            SyncStatus
+  startedAt         DateTime   @default(now())
+  finishedAt        DateTime?
+  errorMessage      String?
+  stats             Json?
+  triggeredByUserId String?
+  company           Company    @relation(fields: [companyId], references: [id])
+  triggeredByUser   User?      @relation("SyncTriggeredBy", fields: [triggeredByUserId], references: [id])
+
+  @@index([companyId, startedAt])
+  @@index([status])
+}
+
+model SyncCursor {
+  id           String    @id @default(uuid())
+  companyId    String
+  module       String
+  lastSyncedAt DateTime?
+  cursor       String?
+  updatedAt    DateTime  @updatedAt
+  company      Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, module])
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  actorUserId String?
+  companyId   String?
+  action      AuditAction
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  actorUser   User?       @relation("AuditActor", fields: [actorUserId], references: [id])
+  company     Company?    @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model RawPayload {
+  id         String   @id @default(uuid())
+  companyId  String
+  module     String
+  externalId String?
+  payload    Json
+  receivedAt DateTime @default(now())
+  company    Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, module])
+  @@index([companyId, receivedAt])
+}
+
+/// View: vw_vendas (persistida como tabela).
+model VwVendas {
+  id             String   @id @default(uuid())
+  companyId      String
+  dataHora       DateTime @map("DataHora") @db.Timestamptz(6)
+  produto        String   @map("Produto")
+  categoria      String   @map("Categoria")
+  quantidade     Decimal  @map("Quantidade") @db.Decimal(18, 4)
+  valorUnitario  Decimal  @map("Valor_Unitario") @db.Decimal(18, 2)
+  valorTotal     Decimal  @map("Valor_Total") @db.Decimal(18, 2)
+  formaPagamento String   @map("Forma_Pagamento")
+  vendedor       String?  @map("Vendedor")
+  cliente        String?  @map("Cliente")
+  cnpjCliente    String   @map("CNPJ_Cliente")
+  caixa          String   @map("Caixa")
+  status         String   @map("Status")
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataHora])
+  @@index([companyId, status])
+  @@map("vw_vendas")
+}
+
+/// View: vw_contas_receber_posicao (snapshot diário).
+model VwContasReceberPosicao {
+  id             String   @id @default(uuid())
+  companyId      String
+  tituloId       BigInt   @map("ID_Titulo") @db.BigInt
+  cliente        String   @map("Cliente")
+  cnpj           String   @map("CNPJ")
+  categoria      String   @map("Categoria")
+  centroCusto    String?  @map("CentroCusto")
+  dataEmissao    DateTime @map("Data_Emissao") @db.Date
+  dataVencimento DateTime @map("Data_Vencimento") @db.Date
+  valor          Decimal  @map("Valor") @db.Decimal(18, 2)
+  dataPosicao    DateTime @map("Data_Posicao") @db.Date
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataPosicao])
+  @@index([companyId, dataVencimento])
+  @@map("vw_contas_receber_posicao")
+}
+
+/// View: vw_contas_pagar.
+model VwContasPagar {
+  id             String   @id @default(uuid())
+  companyId      String
+  tituloId       BigInt   @map("ID_Titulo") @db.BigInt
+  fornecedor     String   @map("Fornecedor")
+  categoria      String   @map("Categoria")
+  centroCusto    String?  @map("CentroCusto")
+  dataEmissao    DateTime @map("Data_Emissao") @db.Date
+  dataVencimento DateTime @map("Data_Vencimento") @db.Date
+  valor          Decimal  @map("Valor") @db.Decimal(18, 2)
+  status         String   @map("Status")
+  formaPagto     String?  @map("FormaPagto")
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataVencimento])
+  @@index([companyId, status])
+  @@map("vw_contas_pagar")
+}
+
+/// View: vw_contas_pagas.
+model VwContasPagas {
+  id             String   @id @default(uuid())
+  companyId      String
+  tituloId       BigInt   @map("ID_Titulo") @db.BigInt
+  fornecedor     String   @map("Fornecedor")
+  categoria      String   @map("Categoria")
+  centroCusto    String?  @map("CentroCusto")
+  dataEmissao    DateTime @map("Data_Emissao") @db.Date
+  dataVencimento DateTime @map("Data_Vencimento") @db.Date
+  dataPagamento  DateTime @map("Data_Pagamento") @db.Date
+  valorTitulo    Decimal  @map("Valor_Titulo") @db.Decimal(18, 2)
+  valorPago      Decimal  @map("Valor_Pago") @db.Decimal(18, 2)
+  desconto       Decimal  @map("Desconto") @db.Decimal(18, 2)
+  juros          Decimal  @map("Juros") @db.Decimal(18, 2)
+  multa          Decimal  @map("Multa") @db.Decimal(18, 2)
+  contaBancaria  String   @map("Conta_Bancaria")
+  formaPagamento String   @map("Forma_Pagamento")
+  usuarioBaixa   String?  @map("Usuario_Baixa")
+  status         String   @map("Status")
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataPagamento])
+  @@index([companyId, status])
+  @@map("vw_contas_pagas")
+}
+
+/// View: vw_estoque (snapshot diário).
+model VwEstoque {
+  id                     String   @id @default(uuid())
+  companyId              String
+  dataReferencia         DateTime @map("Data_Referencia") @db.Date
+  produto                String   @map("Produto")
+  categoria              String   @map("Categoria")
+  unidadeMedida          String   @map("Unidade_Medida")
+  estoqueInicial         Decimal  @map("Estoque_Inicial") @db.Decimal(18, 2)
+  entradas               Decimal  @map("Entradas") @db.Decimal(18, 2)
+  saidas                 Decimal  @map("Saidas") @db.Decimal(18, 2)
+  ajustes                Decimal  @map("Ajustes") @db.Decimal(18, 2)
+  estoqueFinal           Decimal  @map("Estoque_Final") @db.Decimal(18, 2)
+  custoMedio             Decimal  @map("Custo_Medio") @db.Decimal(18, 4)
+  valorTotalEstoque      Decimal  @map("Valor_Total_Estoque") @db.Decimal(18, 2)
+  fornecedorUltimaCompra String   @map("Fornecedor_Ultima_Compra")
+  dataUltimaCompra       DateTime @map("Data_Ultima_Compra") @db.Date
+  responsavelConferencia String   @map("Responsavel_Conferencia")
+  observacao             String   @map("Observacao")
+  company                Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataReferencia])
+  @@index([companyId, produto])
+  @@map("vw_estoque")
+}
+
+/// View: vw_contas_recebidas.
+model VwContasRecebidas {
+  id                String   @id @default(uuid())
+  companyId         String
+  tituloId          BigInt   @map("ID_Titulo") @db.BigInt
+  cliente           String   @map("Cliente")
+  cnpjCpf           String   @map("CNPJ_CPF")
+  categoria         String   @map("Categoria")
+  centroCusto       String?  @map("CentroCusto")
+  dataEmissao       DateTime @map("Data_Emissao") @db.Date
+  dataVencimento    DateTime @map("Data_Vencimento") @db.Date
+  dataRecebimento   DateTime @map("Data_Recebimento") @db.Date
+  valorTitulo       Decimal  @map("Valor_Titulo") @db.Decimal(18, 2)
+  valorRecebido     Decimal  @map("Valor_Recebido") @db.Decimal(18, 2)
+  desconto          Decimal  @map("Desconto") @db.Decimal(18, 2)
+  juros             Decimal  @map("Juros") @db.Decimal(18, 2)
+  multa             Decimal  @map("Multa") @db.Decimal(18, 2)
+  comissaoCartao    Decimal  @map("Comissao_cartao") @db.Decimal(18, 2)
+  comissaoMktplaces Decimal  @map("Comissao_mktplaces") @db.Decimal(18, 2)
+  contaBancaria     String   @map("Conta_Bancaria")
+  formaRecebimento  String   @map("Forma_Recebimento")
+  usuarioBaixa      String?  @map("Usuario_Baixa")
+  status            String   @map("Status")
+  company           Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, dataRecebimento])
+  @@index([companyId, status])
+  @@map("vw_contas_recebidas")
+}

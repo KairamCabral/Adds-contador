@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Portal do Contador — Tiny ERP V3
 
-## Getting Started
+Stack: Next.js 15 (App Router) + TypeScript strict + Tailwind v4 + shadcn/ui, Auth.js (credentials + bcrypt), Prisma + Vercel Postgres, exports CSV/XLSX.
 
-First, run the development server:
-
+## Setup local
 ```bash
+npm install
+npx prisma generate
+# configure .env (copie de .env.example)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Variáveis de ambiente (ver .env.example)
+- `DATABASE_URL` — string do Vercel Postgres.
+- `AUTH_SECRET`, `AUTH_URL` — Auth.js.
+- `ENCRYPTION_MASTER_KEY` — 32 bytes base64 (AES-256-GCM para tokens Tiny).
+- `TINY_CLIENT_ID`, `TINY_CLIENT_SECRET`, `TINY_REDIRECT_URI`, `TINY_AUTH_BASE`, `TINY_API_BASE`.
+- `CRON_SECRET` — Bearer usado pelo Vercel Cron para chamar `/api/admin/sync`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Banco e Prisma
+- Schema em `prisma/schema.prisma` (tabelas vw_* persistidas, não views).
+- Migration SQL gerada em `prisma/migrations/0001_init.sql` (from-empty).
+- Gere client: `npx prisma generate`.
+- Para aplicar em novo DB: `psql < prisma/migrations/0001_init.sql` (ou `prisma migrate deploy` quando apontar para um Postgres real).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Fluxo de autenticação / RBAC
+- Login por email+senha (Auth.js credentials) em `/login`.
+- Papéis: `ADMIN` (admin+sync), `OPERADOR` (sync), `CONTADOR` (leitura/export).
+- Middleware restringe `/admin/**`, `/api/admin/**`, `/relatorios/**`, `/api/exports/**`.
+- Crie usuários em `/admin/usuarios` (hash bcrypt gerado server-side).
 
-## Learn More
+## Conexão Tiny (OAuth2)
+- Página `/admin/conexoes-tiny`: criar empresas e conectar via OAuth2.
+- Endpoint de início: `POST /api/admin/tiny/start` (gera URL com state assinado).
+- Callback: `/api/tiny/callback` salva tokens criptografados (AES-256-GCM) em `TinyConnection`.
+- Tokens nunca vão ao frontend; refresh automático em `lib/tiny/client.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+## Sincronização (esqueleto)
+- Endpoint protegido: `POST /api/admin/sync` (ADMIN/OPERADOR ou Bearer `CRON_SECRET` para cron).
+- Orquestração em `jobs/sync.ts` (hoje como esqueleto/no-op; precisa mapear módulos Tiny → tabelas vw_*).
+- Logs em `SyncRun` e `AuditLog`. Snapshots diários previstos para `vw_contas_receber_posicao` e `vw_estoque` (implementar no handler real).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Vercel Cron
+- Configure um cron chamando `POST https://<sua-url>/api/admin/sync` com header `Authorization: Bearer <CRON_SECRET>`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Relatórios e export
+- Páginas: `/relatorios/[view]` para as 6 views (filtros: período, status, busca, empresa, paginação simples).
+- Export: `/api/exports/{view}.csv` e `/api/exports/{view}.xlsx` aplicam os mesmos filtros e registram auditoria `EXPORT`.
+- Botão “Sincronizar agora” disponível na página de relatório (dispara `/api/admin/sync` para a empresa selecionada).
 
-## Deploy on Vercel
+## Gaps conhecidos
+- Integração Tiny ainda sem mapear endpoints/campos reais; `jobs/sync.ts` contém o esqueleto (preencher fetch + mapping para tabelas vw_* e atualizar cursors/snapshots).
+- Campos ausentes no Tiny devem ser derivados ou preenchidos com “N/D” (string) ou 0; documentar o mapa final ao implementar o sync real.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deploy na Vercel
+- Configure Vercel Postgres e `DATABASE_URL`.
+- Defina as variáveis do bloco de ambiente acima.
+- `npm run build` para testar local; deploy automático via GitHub.
+- Certifique-se de configurar o `TINY_REDIRECT_URI` apontando para o domínio de produção (`/api/tiny/callback`).
+- Adicione o cron no painel da Vercel usando `CRON_SECRET`.

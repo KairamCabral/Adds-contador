@@ -1,0 +1,48 @@
+---
+description: "Padrões do projeto: stack, arquitetura, qualidade, segurança, UI/UX e testes."
+alwaysApply: true
+---
+
+  
+CONTEXTO DO PROJETO
+- Objetivo:
+- Público:
+- Principais páginas/fluxos:
+- Integrações:
+
+STACK E PADRÕES
+- Framework: Next.js (App Router) + TypeScript
+- UI: Tailwind + (shadcn/ui ou biblioteca definida)
+- Estado/dados: (React Query / SWR / Server Actions) [defina um]
+- Backend: Supabase (Auth + DB + Storage) com RLS obrigatório
+- Qualidade: ESLint + Prettier + TypeScript strict
+
+CONVENÇÕES DE CÓDIGO
+- Sempre tipar componentes e funções públicas
+- Evitar “any”; justificar exceções
+- Componentes em /components; páginas em /app; libs em /lib; tipos em /types
+- Nomes: kebab-case para pastas, PascalCase para componentes
+- Sem lógica de negócio dentro de componente de UI: mover para hooks/services
+
+UI/UX (CRITÉRIOS MÍNIMOS)
+- Mobile-first (breakpoints claros)
+- A11y: labels, foco visível, aria quando necessário
+- Componentes reutilizáveis; nada de “CSS solto” fora do padrão do projeto
+- Loading/empty/error states obrigatórios em listas e páginas de dados
+
+PERFORMANCE (CRITÉRIOS)
+- Imagens com next/image quando aplicável
+- Evitar bundle grande: dynamic import para coisas pesadas
+- Não fazer fetch duplicado; cache onde fizer sentido
+
+SEGURANÇA
+- Nunca commitar secrets
+- Validar inputs (zod) em endpoints/actions
+- Supabase: RLS por padrão + policies revisadas
+- Logs sem dados sensíveis (LGPD)
+
+TESTES E RELEASE
+- Unit: Vitest/Jest (defina um)
+- E2E: Playwright/Cypress (defina um)
+- Antes de PR: lint + typecheck + testes
+
