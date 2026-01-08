@@ -215,5 +215,5 @@ export async function fetchReport(
   }
 }
 
-export { ReportFilters, ReportResult };
+export type { ReportFilters, ReportResult };
 
