@@ -1,4 +1,6 @@
 import NextAuth from "next-auth";
+import type { JWT } from "next-auth/jwt";
+import type { Session, User } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { z } from "zod";
@@ -69,7 +71,7 @@ export const authConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: JWT; user?: User }) {
       if (user) {
         const typedUser = user as {
           id: string;
@@ -85,7 +87,7 @@ export const authConfig = {
 
       return token;
     },
-    async session({ session, token }) {
+    async session({ session, token }: { session: Session; token: JWT }) {
       session.user = {
         id: token.id as string,
         email: token.email as string,
