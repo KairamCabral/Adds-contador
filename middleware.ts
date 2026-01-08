@@ -1,67 +1,31 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-import { auth } from "@/auth";
-import { Role } from "@prisma/client";
-
-const hasAnyRole = (
-  session: Awaited<ReturnType<typeof auth>>,
-  roles: Role[],
-) => {
-  if (!session?.user?.companies?.length) return false;
-  return session.user.companies.some((c) => roles.includes(c.role));
-};
-
-const redirectToLogin = (url: URL) => NextResponse.redirect(new URL("/login", url));
-
-export default auth((req) => {
+// Middleware simplificado para Edge Runtime (NextAuth completo não funciona aqui)
+// A verificação de RBAC detalhada é feita nas rotas server-side
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const session = req.auth;
-  const isApi = pathname.startsWith("/api");
-  const cronAllowed =
-    pathname.startsWith("/api/admin") &&
-    process.env.CRON_SECRET &&
-    req.headers
-      .get("authorization")
-      ?.toString() === `Bearer ${process.env.CRON_SECRET}`;
-
-  if (cronAllowed) {
-    return NextResponse.next();
-  }
-
-  // Require authentication on matched routes
-  if (!session?.user) {
-    return isApi
-      ? new NextResponse("Unauthorized", { status: 401 })
-      : redirectToLogin(req.nextUrl);
-  }
-
-  // Admin-only areas
-  if (pathname.startsWith("/admin")) {
-    if (!hasAnyRole(session, [Role.ADMIN])) {
-      return isApi
-        ? new NextResponse("Forbidden", { status: 403 })
-        : redirectToLogin(req.nextUrl);
-    }
-  }
-
-  // Sync endpoints (ADMIN or OPERADOR)
+  
+  // Allow cron secret auth for /api/admin/*
   if (pathname.startsWith("/api/admin")) {
-    if (!hasAnyRole(session, [Role.ADMIN, Role.OPERADOR])) {
-      return new NextResponse("Forbidden", { status: 403 });
+    const authHeader = req.headers.get("authorization");
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+      return NextResponse.next();
     }
   }
 
-  // Relatórios e exports (todos os papéis válidos)
-  if (pathname.startsWith("/relatorios") || pathname.startsWith("/api/exports")) {
-    if (!hasAnyRole(session, [Role.ADMIN, Role.CONTADOR, Role.OPERADOR])) {
-      return isApi
-        ? new NextResponse("Forbidden", { status: 403 })
-        : redirectToLogin(req.nextUrl);
+  // Check for session cookie (basic check - detailed RBAC is in routes)
+  const sessionCookie = req.cookies.get("authjs.session-token") || req.cookies.get("__Secure-authjs.session-token");
+  
+  if (!sessionCookie) {
+    if (pathname.startsWith("/api")) {
+      return new NextResponse("Unauthorized", { status: 401 });
     }
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
