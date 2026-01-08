@@ -37,7 +37,8 @@ export async function GET(
     );
   }
 
-  if (!session.user.companies.some((c) => c.companyId === companyId)) {
+  const companies = session.user.companies as Array<{ companyId: string }>;
+  if (!companies.some((c) => c.companyId === companyId)) {
     return unauthorized();
   }
 
