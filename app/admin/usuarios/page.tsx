@@ -10,9 +10,11 @@ import { Role } from "@prisma/client";
 async function createUser(formData: FormData) {
   "use server";
   const session = await auth();
-  if (!userHasRole(session, [Role.ADMIN])) {
+  if (!session?.user || !userHasRole(session, [Role.ADMIN])) {
     throw new Error("Acesso negado");
   }
+
+  const actorUserId = session.user.id;
 
   const email = (formData.get("email") as string)?.toLowerCase().trim();
   const name = (formData.get("name") as string)?.trim();
@@ -45,7 +47,7 @@ async function createUser(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
-      actorUserId: session.user.id,
+      actorUserId,
       companyId,
       action: "LOGIN",
       metadata: { createdUser: email, role },
