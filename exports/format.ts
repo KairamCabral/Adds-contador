@@ -1,12 +1,8 @@
-import { Decimal } from "@prisma/client/runtime/library";
-
 export const serializeValue = (value: unknown) => {
   if (value instanceof Date) {
     return value.toISOString();
   }
-  if (value instanceof Decimal) {
-    return value.toNumber();
-  }
+  // Detectar Prisma Decimal sem importar runtime interno
   if (
     typeof value === "object" &&
     value !== null &&
