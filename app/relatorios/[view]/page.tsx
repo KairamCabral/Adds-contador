@@ -58,7 +58,8 @@ export default async function ReportPage({
     redirect("/login");
   }
 
-  const companyIds = session.user.companies.map((c) => c.companyId);
+  const sessionCompanies = session.user.companies as Array<{ companyId: string }>;
+  const companyIds = sessionCompanies.map((c) => c.companyId);
   const companies = await prisma.company.findMany({
     where: { id: { in: companyIds } },
     orderBy: { name: "asc" },
