@@ -1,3 +1,4 @@
+import React from "react";
 import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/auth";
@@ -15,7 +16,7 @@ type SearchParams = {
   page?: string;
 };
 
-const formatValue = (value: unknown) => {
+const formatValue = (value: unknown): React.ReactNode => {
   if (value instanceof Date) {
     return value.toLocaleDateString("pt-BR");
   }
@@ -35,7 +36,11 @@ const formatValue = (value: unknown) => {
     });
   }
 
-  return value ?? "—";
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return value == null ? "—" : String(value);
 };
 
 export default async function ReportPage({
