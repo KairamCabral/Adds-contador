@@ -14,10 +14,10 @@ const unauthorized = () =>
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ view: string }> },
+  // Next 16: tipo de params para segment com extensão ([view].xlsx) vira `{}`; ignoramos e extraímos do pathname
 ) {
-  const { view: viewParam } = await params;
-  const view = viewParam as ReportView;
+  const match = request.nextUrl.pathname.match(/\/api\/exports\/(.+)\.xlsx$/);
+  const view = (match?.[1] ?? "") as ReportView;
   if (!reports[view]) {
     return NextResponse.json({ error: "View inválida" }, { status: 404 });
   }
