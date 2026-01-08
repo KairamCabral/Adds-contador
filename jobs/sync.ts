@@ -4,6 +4,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { getSyncConfig } from "@/lib/config";
 import { SyncStatus, TinyConnection } from "@prisma/client";
 import {
   listAllPedidos,
@@ -60,11 +61,8 @@ const P1_MODULES: SyncModule[] = ["vw_contas_pagas", "vw_contas_recebidas"];
 // Todos os módulos para sync completo
 const ALL_MODULES: SyncModule[] = [...P0_MODULES, ...P1_MODULES];
 
-// Dias de histórico para buscar na primeira sincronização
-const INITIAL_SYNC_DAYS = 90;
-
-// Dias de histórico para sync incremental
-const INCREMENTAL_SYNC_DAYS = 7;
+// Configuração de lookback (via env vars)
+const { initialLookbackDays: INITIAL_SYNC_DAYS, incrementalLookbackDays: INCREMENTAL_SYNC_DAYS } = getSyncConfig();
 
 // ============================================
 // HELPERS DE SYNC RUN
@@ -603,6 +601,12 @@ const syncByModule = async (
 // ============================================
 
 export async function runSync(options: SyncOptions) {
+  console.log("[Sync] Iniciando sincronização...", {
+    companyId: options.companyId ?? "todas",
+    triggeredBy: options.triggeredByUserId ?? "system",
+    isCron: options.isCron ?? false,
+  });
+
   const companies = await prisma.company.findMany({
     where: options.companyId ? { id: options.companyId } : undefined,
     include: {
@@ -612,60 +616,107 @@ export async function runSync(options: SyncOptions) {
     },
   });
 
-  // Filtrar empresas que têm conexão Tiny ativa
-  const filtered = companies.filter((c) => c.connections.length > 0);
-
-  if (filtered.length === 0) {
-    console.log("[Sync] Nenhuma empresa com conexão Tiny encontrada");
-    return { runIds: [], message: "Nenhuma empresa com conexão Tiny" };
+  if (companies.length === 0) {
+    console.log("[Sync] Nenhuma empresa encontrada");
+    return {
+      runIds: [],
+      message: options.companyId
+        ? "Empresa não encontrada"
+        : "Nenhuma empresa cadastrada",
+    };
   }
 
   const runIds: string[] = [];
+  const results: { companyId: string; companyName: string; status: string; error?: string }[] = [];
 
-  for (const company of filtered) {
+  for (const company of companies) {
     const connection = company.connections[0];
+
+    // Sempre criar SyncRun, mesmo se não tiver conexão
     const run = await createRun(company.id, options.triggeredByUserId);
     runIds.push(run.id);
 
+    // Verificar se tem conexão Tiny
+    if (!connection) {
+      console.log(`[Sync] ${company.name}: Sem conexão Tiny, pulando...`);
+      await finishRun(
+        run.id,
+        SyncStatus.FAILED,
+        [],
+        "TinyConnection não encontrada. Conecte a empresa ao Tiny em /admin/conexoes-tiny"
+      );
+      results.push({
+        companyId: company.id,
+        companyName: company.name,
+        status: "skipped",
+        error: "Sem conexão Tiny",
+      });
+      continue;
+    }
+
     console.log(`[Sync] Iniciando sync para ${company.name} (${company.id})`);
+    console.log(`[Sync] Conexão Tiny: ${connection.accountName ?? connection.accountId ?? "unknown"}`);
 
     try {
       const stats = await syncByModule(company.id, connection);
       const hasErrors = stats.some((s) => s.errors && s.errors.length > 0);
       const totalProcessed = stats.reduce((sum, s) => sum + s.processed, 0);
 
+      const errorSummary = hasErrors
+        ? stats
+            .filter((s) => s.errors && s.errors.length > 0)
+            .map((s) => `${s.module}: ${s.errors?.slice(0, 2).join(", ")}${(s.errors?.length ?? 0) > 2 ? "..." : ""}`)
+            .join("; ")
+        : undefined;
+
       await finishRun(
         run.id,
         hasErrors ? SyncStatus.FAILED : SyncStatus.SUCCESS,
         stats,
-        hasErrors
-          ? stats
-              .filter((s) => s.errors)
-              .map((s) => `${s.module}: ${s.errors?.join(", ")}`)
-              .join("; ")
-          : undefined
+        errorSummary
       );
 
-      await logAudit(
-        company.id,
-        options.triggeredByUserId,
-        !hasErrors,
-        stats
-      );
+      await logAudit(company.id, options.triggeredByUserId, !hasErrors, stats);
+
+      results.push({
+        companyId: company.id,
+        companyName: company.name,
+        status: hasErrors ? "partial" : "success",
+        error: errorSummary,
+      });
 
       console.log(
-        `[Sync] Finalizado para ${company.name}: ${totalProcessed} registros processados`
+        `[Sync] Finalizado para ${company.name}: ${totalProcessed} registros processados${hasErrors ? " (com erros)" : ""}`
       );
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Falha desconhecida";
+      const errorStack = err instanceof Error ? err.stack : undefined;
 
-      console.error(`[Sync] Erro para ${company.name}: ${errorMessage}`);
+      console.error(`[Sync] Erro crítico para ${company.name}:`, errorMessage);
+      if (errorStack) {
+        console.error("[Sync] Stack:", errorStack.split("\n").slice(0, 5).join("\n"));
+      }
 
       await finishRun(run.id, SyncStatus.FAILED, [], errorMessage);
       await logAudit(company.id, options.triggeredByUserId, false);
+
+      results.push({
+        companyId: company.id,
+        companyName: company.name,
+        status: "error",
+        error: errorMessage,
+      });
     }
   }
 
-  return { runIds };
+  console.log("[Sync] Sincronização finalizada", {
+    totalCompanies: companies.length,
+    synced: results.filter((r) => r.status === "success").length,
+    partial: results.filter((r) => r.status === "partial").length,
+    skipped: results.filter((r) => r.status === "skipped").length,
+    errors: results.filter((r) => r.status === "error").length,
+  });
+
+  return { runIds, results };
 }

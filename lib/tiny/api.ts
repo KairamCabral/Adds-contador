@@ -1,6 +1,15 @@
 /**
  * Métodos de acesso à API Tiny ERP V3
- * Endpoints baseados em: https://api.tiny.com.br/swagger
+ * Swagger: https://api.tiny.com.br/public-api/v3/swagger
+ * 
+ * Endpoints V3:
+ * - GET /pedidos - Lista pedidos
+ * - GET /pedidos/{id} - Detalhe do pedido
+ * - GET /contas-receber - Contas a receber
+ * - GET /contas-pagar - Contas a pagar
+ * - GET /produtos - Produtos
+ * - GET /estoques - Estoque
+ * - GET /contatos/{id} - Contato por ID
  */
 
 import { TinyConnection } from "@prisma/client";
@@ -22,11 +31,11 @@ import {
 // UTILITÁRIOS
 // ============================================
 
+/**
+ * Formata data para o padrão aceito pela API Tiny V3 (YYYY-MM-DD)
+ */
 const formatDateForTiny = (date: Date): string => {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  return date.toISOString().split("T")[0]; // YYYY-MM-DD
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,7 +56,9 @@ const withRetry = async <T>(
       // Se for rate limit (429) ou erro de servidor (5xx), retry com backoff
       const isRetryable =
         lastError.message.includes("429") ||
-        lastError.message.includes("5");
+        lastError.message.includes("500") ||
+        lastError.message.includes("502") ||
+        lastError.message.includes("503");
 
       if (!isRetryable || attempt === maxRetries - 1) {
         throw lastError;
@@ -55,7 +66,7 @@ const withRetry = async <T>(
 
       const delay = baseDelay * Math.pow(2, attempt);
       console.log(
-        `[Tiny API] Retry ${attempt + 1}/${maxRetries} após ${delay}ms`
+        `[Tiny API] Retry ${attempt + 1}/${maxRetries} após ${delay}ms: ${lastError.message}`
       );
       await sleep(delay);
     }
@@ -70,6 +81,7 @@ const withRetry = async <T>(
 
 /**
  * Lista pedidos com paginação
+ * Endpoint V3: GET /pedidos
  */
 export async function listPedidos(
   connection: TinyConnection,
@@ -87,7 +99,7 @@ export async function listPedidos(
   return withRetry(() =>
     tinyRequest<TinyPaginatedResponse<TinyPedidoResumo>>({
       connection,
-      path: "/api3/pedidos",
+      path: "/pedidos",
       query,
     })
   );
@@ -95,6 +107,7 @@ export async function listPedidos(
 
 /**
  * Busca detalhes de um pedido específico (com itens)
+ * Endpoint V3: GET /pedidos/{id}
  */
 export async function getPedido(
   connection: TinyConnection,
@@ -103,7 +116,7 @@ export async function getPedido(
   return withRetry(() =>
     tinyRequest<TinyPedidoDetalhe>({
       connection,
-      path: `/api3/pedidos/${pedidoId}`,
+      path: `/pedidos/${pedidoId}`,
     })
   );
 }
@@ -121,6 +134,10 @@ export async function listAllPedidos(
   let pagina = 1;
   let hasMore = true;
 
+  console.log(
+    `[Tiny] Buscando pedidos de ${formatDateForTiny(dataInicial)} a ${formatDateForTiny(dataFinal)}`
+  );
+
   while (hasMore) {
     const response = await listPedidos(connection, {
       dataInicial: formatDateForTiny(dataInicial),
@@ -131,16 +148,20 @@ export async function listAllPedidos(
 
     if (response.itens && response.itens.length > 0) {
       allPedidos.push(...response.itens);
+      console.log(
+        `[Tiny] Pedidos página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allPedidos.length})`
+      );
       pagina++;
       hasMore = pagina <= response.numero_paginas;
 
       // Rate limit: pequeno delay entre páginas
-      if (hasMore) await sleep(200);
+      if (hasMore) await sleep(300);
     } else {
       hasMore = false;
     }
   }
 
+  console.log(`[Tiny] Total de pedidos encontrados: ${allPedidos.length}`);
   return allPedidos;
 }
 
@@ -150,6 +171,7 @@ export async function listAllPedidos(
 
 /**
  * Lista contas a receber com paginação
+ * Endpoint V3: GET /contas-receber
  */
 export async function listContasReceber(
   connection: TinyConnection,
@@ -166,7 +188,7 @@ export async function listContasReceber(
   return withRetry(() =>
     tinyRequest<TinyPaginatedResponse<TinyContaReceber>>({
       connection,
-      path: "/api3/contas.receber",
+      path: "/contas-receber",
       query,
     })
   );
@@ -185,6 +207,10 @@ export async function listAllContasReceber(
   let pagina = 1;
   let hasMore = true;
 
+  console.log(
+    `[Tiny] Buscando contas a receber de ${formatDateForTiny(dataInicial)} a ${formatDateForTiny(dataFinal)}${situacao ? ` (${situacao})` : ""}`
+  );
+
   while (hasMore) {
     const response = await listContasReceber(connection, {
       dataInicial: formatDateForTiny(dataInicial),
@@ -195,14 +221,18 @@ export async function listAllContasReceber(
 
     if (response.itens && response.itens.length > 0) {
       allContas.push(...response.itens);
+      console.log(
+        `[Tiny] Contas receber página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allContas.length})`
+      );
       pagina++;
       hasMore = pagina <= response.numero_paginas;
-      if (hasMore) await sleep(200);
+      if (hasMore) await sleep(300);
     } else {
       hasMore = false;
     }
   }
 
+  console.log(`[Tiny] Total de contas a receber: ${allContas.length}`);
   return allContas;
 }
 
@@ -212,6 +242,7 @@ export async function listAllContasReceber(
 
 /**
  * Lista contas a pagar com paginação
+ * Endpoint V3: GET /contas-pagar
  */
 export async function listContasPagar(
   connection: TinyConnection,
@@ -228,7 +259,7 @@ export async function listContasPagar(
   return withRetry(() =>
     tinyRequest<TinyPaginatedResponse<TinyContaPagar>>({
       connection,
-      path: "/api3/contas.pagar",
+      path: "/contas-pagar",
       query,
     })
   );
@@ -247,6 +278,10 @@ export async function listAllContasPagar(
   let pagina = 1;
   let hasMore = true;
 
+  console.log(
+    `[Tiny] Buscando contas a pagar de ${formatDateForTiny(dataInicial)} a ${formatDateForTiny(dataFinal)}${situacao ? ` (${situacao})` : ""}`
+  );
+
   while (hasMore) {
     const response = await listContasPagar(connection, {
       dataInicial: formatDateForTiny(dataInicial),
@@ -257,14 +292,18 @@ export async function listAllContasPagar(
 
     if (response.itens && response.itens.length > 0) {
       allContas.push(...response.itens);
+      console.log(
+        `[Tiny] Contas pagar página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allContas.length})`
+      );
       pagina++;
       hasMore = pagina <= response.numero_paginas;
-      if (hasMore) await sleep(200);
+      if (hasMore) await sleep(300);
     } else {
       hasMore = false;
     }
   }
 
+  console.log(`[Tiny] Total de contas a pagar: ${allContas.length}`);
   return allContas;
 }
 
@@ -274,6 +313,7 @@ export async function listAllContasPagar(
 
 /**
  * Lista produtos com paginação
+ * Endpoint V3: GET /produtos
  */
 export async function listProdutos(
   connection: TinyConnection,
@@ -282,7 +322,7 @@ export async function listProdutos(
   return withRetry(() =>
     tinyRequest<TinyPaginatedResponse<TinyProduto>>({
       connection,
-      path: "/api3/produtos",
+      path: "/produtos",
       query: { pagina },
     })
   );
@@ -290,6 +330,7 @@ export async function listProdutos(
 
 /**
  * Lista estoque atual
+ * Endpoint V3: GET /estoques
  */
 export async function listEstoque(
   connection: TinyConnection,
@@ -298,7 +339,7 @@ export async function listEstoque(
   return withRetry(() =>
     tinyRequest<TinyPaginatedResponse<TinyEstoque>>({
       connection,
-      path: "/api3/estoques",
+      path: "/estoques",
       query: { pagina },
     })
   );
@@ -310,6 +351,7 @@ export async function listEstoque(
 
 /**
  * Busca contato por ID
+ * Endpoint V3: GET /contatos/{id}
  */
 export async function getContato(
   connection: TinyConnection,
@@ -318,8 +360,107 @@ export async function getContato(
   return withRetry(() =>
     tinyRequest<TinyContato>({
       connection,
-      path: `/api3/contatos/${contatoId}`,
+      path: `/contatos/${contatoId}`,
     })
   );
 }
 
+// ============================================
+// SMOKE TEST (para diagnóstico)
+// ============================================
+
+export type SmokeTestResult = {
+  success: boolean;
+  apiBase: string;
+  tests: {
+    name: string;
+    status: number | null;
+    timeMs: number;
+    count: number;
+    sampleIds: (number | string)[];
+    error?: string;
+  }[];
+};
+
+/**
+ * Executa teste rápido da conexão com a API Tiny
+ * Retorna resultado sem expor tokens
+ */
+export async function runSmokeTest(
+  connection: TinyConnection
+): Promise<SmokeTestResult> {
+  const { getTinyApiBase } = await import("./client");
+  const apiBase = getTinyApiBase();
+
+  const tests: SmokeTestResult["tests"] = [];
+
+  // Teste 1: Pedidos
+  const pedidosStart = Date.now();
+  try {
+    const result = await listPedidos(connection, { pagina: 1 });
+    tests.push({
+      name: "pedidos",
+      status: 200,
+      timeMs: Date.now() - pedidosStart,
+      count: result.itens?.length ?? 0,
+      sampleIds: (result.itens ?? []).slice(0, 3).map((p) => p.id),
+    });
+  } catch (error) {
+    tests.push({
+      name: "pedidos",
+      status: null,
+      timeMs: Date.now() - pedidosStart,
+      count: 0,
+      sampleIds: [],
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // Teste 2: Contas a Receber
+  const receberStart = Date.now();
+  try {
+    const result = await listContasReceber(connection, { pagina: 1 });
+    tests.push({
+      name: "contas-receber",
+      status: 200,
+      timeMs: Date.now() - receberStart,
+      count: result.itens?.length ?? 0,
+      sampleIds: (result.itens ?? []).slice(0, 3).map((c) => c.id),
+    });
+  } catch (error) {
+    tests.push({
+      name: "contas-receber",
+      status: null,
+      timeMs: Date.now() - receberStart,
+      count: 0,
+      sampleIds: [],
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // Teste 3: Contas a Pagar
+  const pagarStart = Date.now();
+  try {
+    const result = await listContasPagar(connection, { pagina: 1 });
+    tests.push({
+      name: "contas-pagar",
+      status: 200,
+      timeMs: Date.now() - pagarStart,
+      count: result.itens?.length ?? 0,
+      sampleIds: (result.itens ?? []).slice(0, 3).map((c) => c.id),
+    });
+  } catch (error) {
+    tests.push({
+      name: "contas-pagar",
+      status: null,
+      timeMs: Date.now() - pagarStart,
+      count: 0,
+      sampleIds: [],
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const success = tests.every((t) => t.status === 200);
+
+  return { success, apiBase, tests };
+}
