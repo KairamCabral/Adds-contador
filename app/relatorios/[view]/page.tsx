@@ -42,10 +42,12 @@ export default async function ReportPage({
   params,
   searchParams,
 }: {
-  params: { view: string };
-  searchParams: SearchParams;
+  params: Promise<{ view: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const view = params.view as ReportView;
+  const { view: viewParam } = await params;
+  const view = viewParam as ReportView;
+  const filters = await searchParams;
   const config = reports[view];
   if (!config) {
     notFound();
@@ -63,7 +65,7 @@ export default async function ReportPage({
   });
 
   const selectedCompanyId =
-    searchParams.companyId ?? companies[0]?.id ?? undefined;
+    filters.companyId ?? companies[0]?.id ?? undefined;
 
   if (!selectedCompanyId) {
     return (
@@ -76,7 +78,7 @@ export default async function ReportPage({
     );
   }
 
-  const page = Number(searchParams.page ?? "1");
+  const page = Number(filters.page ?? "1");
 
   const lastSync = await prisma.syncRun.findFirst({
     where: { companyId: selectedCompanyId },
@@ -85,10 +87,10 @@ export default async function ReportPage({
 
   const data = await fetchReport(view, {
     companyId: selectedCompanyId,
-    start: searchParams.start,
-    end: searchParams.end,
-    status: searchParams.status,
-    search: searchParams.search,
+    start: filters.start,
+    end: filters.end,
+    status: filters.status,
+    search: filters.search,
     page,
     pageSize: 20,
   });
@@ -96,10 +98,10 @@ export default async function ReportPage({
   const buildParams = (extra?: Record<string, string>) => {
     const params = new URLSearchParams();
     params.set("companyId", selectedCompanyId);
-    if (searchParams.start) params.set("start", searchParams.start);
-    if (searchParams.end) params.set("end", searchParams.end);
-    if (searchParams.status) params.set("status", searchParams.status);
-    if (searchParams.search) params.set("search", searchParams.search);
+    if (filters.start) params.set("start", filters.start);
+    if (filters.end) params.set("end", filters.end);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.search) params.set("search", filters.search);
     if (extra) {
       Object.entries(extra).forEach(([key, value]) => params.set(key, value));
     }
@@ -164,7 +166,7 @@ export default async function ReportPage({
               <input
                 type="date"
                 name="start"
-                defaultValue={searchParams.start}
+                defaultValue={filters.start}
                 className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500"
               />
             </label>
@@ -173,7 +175,7 @@ export default async function ReportPage({
               <input
                 type="date"
                 name="end"
-                defaultValue={searchParams.end}
+                defaultValue={filters.end}
                 className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500"
               />
             </label>
@@ -183,7 +185,7 @@ export default async function ReportPage({
                 type="text"
                 name="status"
                 placeholder="ex: pago, aberto"
-                defaultValue={searchParams.status}
+                defaultValue={filters.status}
                 className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500"
               />
             </label>
@@ -193,7 +195,7 @@ export default async function ReportPage({
                 type="text"
                 name="search"
                 placeholder="cliente, fornecedor, produto"
-                defaultValue={searchParams.search}
+                defaultValue={filters.search}
                 className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500"
               />
             </label>

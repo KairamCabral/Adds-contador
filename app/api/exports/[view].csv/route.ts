@@ -14,9 +14,10 @@ const unauthorized = () =>
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { view: string } },
+  { params }: { params: Promise<{ view: string }> },
 ) {
-  const view = params.view as ReportView;
+  const { view: viewParam } = await params;
+  const view = viewParam as ReportView;
   if (!reports[view]) {
     return NextResponse.json({ error: "View inválida" }, { status: 404 });
   }
