@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 
 import { ConnectTinyButton } from "./connect-button";
 

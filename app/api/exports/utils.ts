@@ -1,7 +1,7 @@
 import { reports, ReportView } from "@/app/relatorios/config";
 import { buildWhere } from "@/lib/reports";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/lib/generated/prisma";
+import { Prisma } from "@prisma/client";
 
 export type ExportFilters = {
   companyId: string;

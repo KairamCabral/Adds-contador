@@ -5,7 +5,7 @@ import { hash } from "bcryptjs";
 import { auth } from "@/auth";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 
 async function createUser(formData: FormData) {
   "use server";

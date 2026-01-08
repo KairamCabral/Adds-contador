@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { SyncStatus, TinyConnection } from "@/lib/generated/prisma";
+import { SyncStatus, TinyConnection } from "@prisma/client";
 
 type SyncOptions = {
   companyId?: string;

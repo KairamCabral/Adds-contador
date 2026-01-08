@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { auth } from "@/auth";
 import { userHasRole } from "@/lib/authz";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 import { runSync } from "@/jobs/sync";
 
 const isCronRequest = (req: NextRequest) => {

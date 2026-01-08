@@ -4,7 +4,7 @@ import { compare } from "bcryptjs";
 import { z } from "zod";
 
 import { prisma } from "@/lib/db";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 
 const credentialsSchema = z.object({
   email: z.string().email(),

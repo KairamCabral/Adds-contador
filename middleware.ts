@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 
 const hasAnyRole = (
   session: Awaited<ReturnType<typeof auth>>,

@@ -1,4 +1,4 @@
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 import { Session } from "next-auth";
 
 export type RoleCheck = Role | Role[];

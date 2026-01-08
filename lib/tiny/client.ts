@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import {
   TinyConnection,
   Prisma,
-} from "@/lib/generated/prisma";
+} from "@prisma/client";
 
 import { decryptSecret, encryptSecret } from "../crypto";
 import { refreshAccessToken, TinyTokenResponse } from "./oauth";

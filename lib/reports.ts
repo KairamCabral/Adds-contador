@@ -7,7 +7,7 @@ import {
   VwContasRecebidas,
   VwEstoque,
   VwVendas,
-} from "@/lib/generated/prisma";
+} from "@prisma/client";
 
 import { ReportConfig, ReportView, reports } from "@/app/relatorios/config";
 

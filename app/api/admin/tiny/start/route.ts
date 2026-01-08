@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 import { buildAuthorizeUrl, createOAuthState } from "@/lib/tiny/oauth";
 
 export async function POST(request: NextRequest) {

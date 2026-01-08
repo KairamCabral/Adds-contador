@@ -5,7 +5,7 @@ import { reports, ReportView } from "@/app/relatorios/config";
 import { buildXlsx } from "@/exports/xlsx";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
-import { Role } from "@/lib/generated/prisma";
+import { Role } from "@prisma/client";
 
 import { fetchRowsForExport } from "../utils";
 
