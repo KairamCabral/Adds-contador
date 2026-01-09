@@ -131,16 +131,30 @@ export function safeText(value: unknown, fallback: string = "-"): string {
  * Ex: safeGet(obj, "cliente.cpfCnpj") ou safeGet(obj, ["cliente", "cpfCnpj"])
  */
 export function safeGet(obj: unknown, path: string | string[]): unknown {
-  if (!obj) return undefined;
+  if (!obj || typeof obj !== 'object') return undefined;
 
   const keys = Array.isArray(path) ? path : path.split(".");
-  let current = obj;
+  let current: unknown = obj;
 
   for (const key of keys) {
-    if (current === null || current === undefined) {
+    // Type guard: verificar se current é um objeto não-null
+    if (
+      current === null || 
+      current === undefined || 
+      typeof current !== 'object'
+    ) {
       return undefined;
     }
-    current = current[key];
+
+    // Safe cast para Record<string, unknown>
+    const currentObj = current as Record<string, unknown>;
+    
+    // Verificar se a chave existe no objeto
+    if (!(key in currentObj)) {
+      return undefined;
+    }
+
+    current = currentObj[key];
   }
 
   return current;
