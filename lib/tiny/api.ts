@@ -313,7 +313,7 @@ export async function listAllContasPagar(
       pagina,
     });
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:310',message:'listContasPagar API RESPONSE',data:{pagina,hasItens:!!response.itens,itensLength:response.itens?.length||0,numero_paginas:response.numero_paginas,totalRegistros:response.total_registros,firstItemId:response.itens?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:310',message:'listContasPagar API RESPONSE',data:{pagina,hasItens:!!response.itens,itensLength:response.itens?.length||0,numero_paginas:response.numero_paginas,totalItens:response.total_itens,firstItemId:response.itens?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
     // #endregion
 
     if (response.itens && response.itens.length > 0) {
