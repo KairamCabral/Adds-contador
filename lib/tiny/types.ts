@@ -47,6 +47,13 @@ export type TinyPedidoItem = {
   valor_total?: number;
   codigo?: string;
   unidade?: string;
+  produto?: {
+    id: number;
+    descricao: string;
+    codigo?: string;
+    unidade?: string;
+    preco?: number;
+  };
 };
 
 export type TinyPedidoDetalhe = {
