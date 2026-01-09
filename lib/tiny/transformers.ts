@@ -40,7 +40,11 @@ export type VwVendasInput = Prisma.VwVendasCreateInput;
 /**
  * Mapeia código de situação para texto legível (baseado em docs Tiny V3)
  */
-const mapSituacao = (codigo: number | string): string => {
+const mapSituacao = (codigo?: number | string): string => {
+  if (codigo === undefined || codigo === null) {
+    return "Desconhecido";
+  }
+  
   const map: Record<string, string> = {
     "0": "Em aberto",
     "1": "Aprovado",
@@ -97,9 +101,9 @@ export function transformPedidoDetalheToVendas(
     ""
   ) || "N/D";
 
-  const situacaoRaw = getFirst(detalhe, ["situacao", "situacaoCodigo"]);
+  const situacaoRaw = getFirst<string | number>(detalhe, ["situacao", "situacaoCodigo"]);
   const status = mapSituacao(situacaoRaw);
-  const itens = detalhe.itens || [];
+  const itens = getFirst<TinyPedidoItem[]>(detalhe, ["itens"]) ?? [];
   
   if (itens.length === 0) {
     // Pedido sem itens: criar linha única com valor total
@@ -152,8 +156,13 @@ export function transformPedidoDetalheToVendas(
     if (enrichData?.produtos && produtoId) {
       const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));
       
-      if (produtoEnriquecido?.categoria?.nome) {
-        categoria = produtoEnriquecido.categoria.nome;
+      // Type guard para extrair categoria
+      if (produtoEnriquecido && typeof produtoEnriquecido === 'object') {
+        const prod = produtoEnriquecido as Record<string, unknown>;
+        const cat = prod.categoria as Record<string, unknown> | undefined;
+        if (cat?.nome) {
+          categoria = String(cat.nome);
+        }
       }
     }
 
@@ -268,24 +277,27 @@ export function transformContaReceberToPosicao(
   conta: unknown,
   dataPosicao: Date = new Date()
 ): VwContasReceberPosicaoInput {
-  // Extração segura de campos aninhados
-  const cliente = safeText(safeGet(conta, ["cliente", "nome"]));
-  const cnpj = safeText(safeGet(conta, ["cliente", "cpfCnpj"]));
-  const categoria = safeText(safeGet(conta, ["categoria", "nome"]) || safeGet(conta, "categoria"));
-  const centroCusto = safeText(safeGet(conta, ["centroCusto", "nome"]) || safeGet(conta, "centroCusto"));
+  const contaObj = conta as Record<string, unknown>;
   
-  const valor = toPrismaDecimal(conta.valor, 0);
+  // Extração segura de campos aninhados
+  const cliente = safeText(safeGet(contaObj, ["cliente", "nome"]));
+  const cnpj = safeText(safeGet(contaObj, ["cliente", "cpfCnpj"]));
+  const categoria = safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria"));
+  const centroCusto = safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto"));
+  
+  const valor = toPrismaDecimal(contaObj.valor, 0);
+  const idConta = contaObj.id as string | number;
 
   return {
-    id: generateId(companyId, `${conta.id}_${dataPosicao.toISOString().split("T")[0]}`),
+    id: generateId(companyId, `${idConta}_${dataPosicao.toISOString().split("T")[0]}`),
     company: { connect: { id: companyId } },
-    tituloId: BigInt(conta.id),
+    tituloId: BigInt(idConta as number),
     cliente: cliente || "N/D",
     cnpj: cnpj || "N/D",
     categoria: categoria || "N/D",
     centroCusto: centroCusto || null,
-    dataEmissao: toDate(conta.dataEmissao || conta.data_emissao) ?? new Date(),
-    dataVencimento: toDate(conta.dataVencimento || conta.data_vencimento) ?? new Date(),
+    dataEmissao: toDate(getFirst(contaObj, ["dataEmissao", "data_emissao"])) ?? new Date(),
+    dataVencimento: toDate(getFirst(contaObj, ["dataVencimento", "data_vencimento"])) ?? new Date(),
     valor,
     dataPosicao,
   };
@@ -304,25 +316,28 @@ export function transformContaPagarToView(
   companyId: string,
   conta: unknown
 ): VwContasPagarInput {
-  // Extração segura de campos aninhados
-  const fornecedor = safeText(safeGet(conta, ["fornecedor", "nome"]));
-  const categoria = safeText(safeGet(conta, ["categoria", "nome"]) || safeGet(conta, "categoria"));
-  const centroCusto = safeText(safeGet(conta, ["centroCusto", "nome"]) || safeGet(conta, "centroCusto"));
-  const formaPagto = safeText(safeGet(conta, ["formaPagamento", "nome"]) || safeGet(conta, "forma_pagamento"));
+  const contaObj = conta as Record<string, unknown>;
   
-  const valor = toPrismaDecimal(conta.valor, 0);
+  // Extração segura de campos aninhados
+  const fornecedor = safeText(safeGet(contaObj, ["fornecedor", "nome"]));
+  const categoria = safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria"));
+  const centroCusto = safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto"));
+  const formaPagto = safeText(safeGet(contaObj, ["formaPagamento", "nome"]) || safeGet(contaObj, "forma_pagamento"));
+  
+  const valor = toPrismaDecimal(contaObj.valor, 0);
+  const idConta = contaObj.id as string | number;
 
   return {
-    id: generateId(companyId, conta.id),
+    id: generateId(companyId, idConta),
     company: { connect: { id: companyId } },
-    tituloId: BigInt(conta.id),
+    tituloId: BigInt(idConta as number),
     fornecedor: fornecedor || "N/D",
     categoria: categoria || "N/D",
     centroCusto: centroCusto || null,
-    dataEmissao: toDate(conta.dataEmissao || conta.data_emissao) ?? new Date(),
-    dataVencimento: toDate(conta.dataVencimento || conta.data_vencimento) ?? new Date(),
+    dataEmissao: toDate(getFirst(contaObj, ["dataEmissao", "data_emissao"])) ?? new Date(),
+    dataVencimento: toDate(getFirst(contaObj, ["dataVencimento", "data_vencimento"])) ?? new Date(),
     valor,
-    status: safeText(conta.situacao) || "N/D",
+    status: safeText(contaObj.situacao) || "N/D",
     formaPagto: formaPagto || null,
   };
 }
@@ -340,31 +355,37 @@ export function transformContaPagaToView(
   companyId: string,
   conta: unknown
 ): VwContasPagasInput | null {
+  const contaObj = conta as Record<string, unknown>;
+  
   // Só processa se está pago
-  if (conta.situacao !== "pago") {
+  if (contaObj.situacao !== "pago") {
     return null;
   }
 
   // Data de pagamento: usar data_pagamento se disponível, senão usar data_vencimento como fallback
-  const dataPagamento = toDate(conta.data_pagamento ?? conta.dataPagamento) ?? toDate(conta.data_vencimento) ?? new Date();
+  const dataPagamento = toDate(getFirst(contaObj, ["data_pagamento", "dataPagamento"])) 
+    ?? toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) 
+    ?? new Date();
+
+  const idConta = contaObj.id as string | number;
 
   return {
-    id: generateId(companyId, `pago_${conta.id}`),
+    id: generateId(companyId, `pago_${idConta}`),
     company: { connect: { id: companyId } },
-    tituloId: BigInt(conta.id),
-    fornecedor: safeText(safeGet(conta, ["fornecedor", "nome"]) || safeGet(conta, ["pessoa", "nome"])),
-    categoria: safeText(safeGet(conta, ["categoria", "nome"]) || safeGet(conta, "categoria")),
-    centroCusto: safeText(safeGet(conta, ["centroCusto", "nome"]) || safeGet(conta, "centroCusto")),
-    dataEmissao: toDate(conta.data_emissao ?? conta.dataEmissao) ?? new Date(),
-    dataVencimento: toDate(conta.data_vencimento ?? conta.dataVencimento) ?? new Date(),
+    tituloId: BigInt(idConta as number),
+    fornecedor: safeText(safeGet(contaObj, ["fornecedor", "nome"]) || safeGet(contaObj, ["pessoa", "nome"])),
+    categoria: safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria")),
+    centroCusto: safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto")),
+    dataEmissao: toDate(getFirst(contaObj, ["data_emissao", "dataEmissao"])) ?? new Date(),
+    dataVencimento: toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) ?? new Date(),
     dataPagamento,
-    valorTitulo: toPrismaDecimal(conta.valor, 0),
-    valorPago: toPrismaDecimal(conta.valor_pago ?? conta.valorPago ?? conta.valor, 0),
-    desconto: toPrismaDecimal(conta.desconto, 0),
-    juros: toPrismaDecimal(conta.juros, 0),
-    multa: toPrismaDecimal(conta.multa, 0),
-    contaBancaria: safeText(conta.conta_bancaria ?? conta.contaBancaria),
-    formaPagamento: safeText(conta.forma_pagamento ?? conta.formaPagamento),
+    valorTitulo: toPrismaDecimal(contaObj.valor, 0),
+    valorPago: toPrismaDecimal(getFirst(contaObj, ["valor_pago", "valorPago", "valor"]), 0),
+    desconto: toPrismaDecimal(contaObj.desconto, 0),
+    juros: toPrismaDecimal(contaObj.juros, 0),
+    multa: toPrismaDecimal(contaObj.multa, 0),
+    contaBancaria: safeText(getFirst(contaObj, ["conta_bancaria", "contaBancaria"])),
+    formaPagamento: safeText(getFirst(contaObj, ["forma_pagamento", "formaPagamento"])),
     usuarioBaixa: null,
     status: "Pago",
   };
@@ -383,34 +404,40 @@ export function transformContaRecebidaToView(
   companyId: string,
   conta: unknown
 ): VwContasRecebidasInput | null {
+  const contaObj = conta as Record<string, unknown>;
+  
   // Só processa se está pago/recebido
-  if (conta.situacao !== "pago") {
+  if (contaObj.situacao !== "pago") {
     return null;
   }
 
   // Data de recebimento: usar data_pagamento se disponível, senão usar data_vencimento como fallback
-  const dataRecebimento = toDate(conta.data_pagamento ?? conta.dataPagamento) ?? toDate(conta.data_vencimento) ?? new Date();
+  const dataRecebimento = toDate(getFirst(contaObj, ["data_pagamento", "dataPagamento"])) 
+    ?? toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) 
+    ?? new Date();
+
+  const idConta = contaObj.id as string | number;
 
   return {
-    id: generateId(companyId, `recebido_${conta.id}`),
+    id: generateId(companyId, `recebido_${idConta}`),
     company: { connect: { id: companyId } },
-    tituloId: BigInt(conta.id),
-    cliente: safeText(safeGet(conta, ["cliente", "nome"]) || safeGet(conta, ["pessoa", "nome"])),
-    cnpjCpf: safeText(safeGet(conta, ["cliente", "cpfCnpj"]) || safeGet(conta, ["pessoa", "cpfCnpj"])),
-    categoria: safeText(safeGet(conta, ["categoria", "nome"]) || safeGet(conta, "categoria")),
-    centroCusto: safeText(safeGet(conta, ["centroCusto", "nome"]) || safeGet(conta, "centroCusto")),
-    dataEmissao: toDate(conta.data_emissao ?? conta.dataEmissao) ?? new Date(),
-    dataVencimento: toDate(conta.data_vencimento ?? conta.dataVencimento) ?? new Date(),
+    tituloId: BigInt(idConta as number),
+    cliente: safeText(safeGet(contaObj, ["cliente", "nome"]) || safeGet(contaObj, ["pessoa", "nome"])),
+    cnpjCpf: safeText(safeGet(contaObj, ["cliente", "cpfCnpj"]) || safeGet(contaObj, ["pessoa", "cpfCnpj"])),
+    categoria: safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria")),
+    centroCusto: safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto")),
+    dataEmissao: toDate(getFirst(contaObj, ["data_emissao", "dataEmissao"])) ?? new Date(),
+    dataVencimento: toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) ?? new Date(),
     dataRecebimento,
-    valorTitulo: toPrismaDecimal(conta.valor, 0),
-    valorRecebido: toPrismaDecimal(conta.valor_recebido ?? conta.valorRecebido ?? conta.valor, 0),
-    desconto: toPrismaDecimal(conta.desconto, 0),
-    juros: toPrismaDecimal(conta.juros, 0),
-    multa: toPrismaDecimal(conta.multa, 0),
-    comissaoCartao: toPrismaDecimal(conta.comissao_cartao ?? conta.comissaoCartao ?? 0, 0),
-    comissaoMktplaces: toPrismaDecimal(conta.comissao_marketplaces ?? conta.comissaoMarketplaces ?? 0, 0),
-    contaBancaria: safeText(conta.conta_bancaria ?? conta.contaBancaria),
-    formaRecebimento: safeText(conta.forma_pagamento ?? conta.formaPagamento),
+    valorTitulo: toPrismaDecimal(contaObj.valor, 0),
+    valorRecebido: toPrismaDecimal(getFirst(contaObj, ["valor_recebido", "valorRecebido", "valor"]), 0),
+    desconto: toPrismaDecimal(contaObj.desconto, 0),
+    juros: toPrismaDecimal(contaObj.juros, 0),
+    multa: toPrismaDecimal(contaObj.multa, 0),
+    comissaoCartao: toPrismaDecimal(getFirst(contaObj, ["comissao_cartao", "comissaoCartao"]) ?? 0, 0),
+    comissaoMktplaces: toPrismaDecimal(getFirst(contaObj, ["comissao_marketplaces", "comissaoMarketplaces"]) ?? 0, 0),
+    contaBancaria: safeText(getFirst(contaObj, ["conta_bancaria", "contaBancaria"])),
+    formaRecebimento: safeText(getFirst(contaObj, ["forma_pagamento", "formaPagamento"])),
     usuarioBaixa: null,
     status: "Recebido",
   };
@@ -430,12 +457,15 @@ export function transformProdutoToEstoque(
   companyId: string,
   produto: Record<string, unknown>,
   dataReferencia: Date
-): Prisma.vwEstoqueCreateInput {
+): Prisma.VwEstoqueCreateInput {
   const produtoNome = safeText(pickFirst(produto.descricao, produto.nome, `Produto ${produto.id}`));
   const categoriaNome = safeText(safeGet(produto, ["categoria", "nome"]));
   const unidade = safeText(produto.unidade || "UN");
-  const saldoFinal = toDecimal(produto.saldo ?? produto.saldoFisico ?? 0) ?? 0;
-  const custoMedio = toDecimal(produto.custoMedio ?? produto.preco ?? 0) ?? 0;
+  const saldoFinalStr = toDecimal(produto.saldo ?? produto.saldoFisico ?? 0) ?? "0";
+  const custoMedioStr = toDecimal(produto.custoMedio ?? produto.preco ?? 0) ?? "0";
+  
+  const saldoFinal = parseFloat(saldoFinalStr);
+  const custoMedio = parseFloat(custoMedioStr);
   
   return {
     id: generateId(companyId, `estoque_${produto.id}_${dataReferencia.toISOString().split("T")[0]}`),
