@@ -144,11 +144,8 @@ export default async function ReportPage({
     <div className="relative min-h-screen bg-slate-950 text-slate-50">
       {/* Header Fixo com Controles */}
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur-sm">
-        {/* Navegação por Abas */}
-        <ReportTabs />
-        
-        {/* Barra de Controles */}
-        <div className="border-t border-slate-800/50">
+        {/* Barra de Controles - Logo e Sync */}
+        <div className="border-b border-slate-800/50">
           <div className="mx-auto max-w-[1920px] px-6">
             <div className="flex items-center justify-between gap-6 py-3">
               {/* Info do Relatório */}
@@ -210,6 +207,9 @@ export default async function ReportPage({
             </div>
           </div>
         </div>
+        
+        {/* Navegação por Abas */}
+        <ReportTabs />
       </header>
 
       {/* Conteúdo Principal - Largura Total */}
