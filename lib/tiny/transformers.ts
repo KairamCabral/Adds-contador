@@ -427,7 +427,7 @@ export type VwEstoqueInput = Prisma.VwEstoqueCreateInput;
  */
 export function transformProdutoToEstoque(
   companyId: string,
-  produto: any,
+  produto: Record<string, unknown>,
   dataReferencia: Date
 ): Prisma.vwEstoqueCreateInput {
   const produtoNome = safeText(pickFirst(produto.descricao, produto.nome, `Produto ${produto.id}`));
