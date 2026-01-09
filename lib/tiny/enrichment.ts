@@ -22,6 +22,7 @@ interface CachedProduto {
   categoria?: {
     id: number;
     nome: string;
+    caminhoCompleto?: string;
   };
   unidade?: string;
   preco?: number;
@@ -65,11 +66,12 @@ export function clearCache(connectionId?: string) {
 }
 
 /**
- * Busca informações de um produto (com categoria)
+ * Busca informações de um produto (com categoria) - COM RETRY
  */
 export async function getProduto(
   connection: TinyConnection,
-  produtoId: number
+  produtoId: number,
+  retries = 3
 ): Promise<CachedProduto | null> {
   const cache = getCache(connection.id);
 
@@ -78,41 +80,62 @@ export async function getProduto(
     return cache.produtos.get(produtoId)!;
   }
 
-  try {
-    const response = await tinyRequest<unknown>({
-      connection,
-      path: `/produtos/${produtoId}`,
-    });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await tinyRequest<unknown>({
+        connection,
+        path: `/produtos/${produtoId}`,
+      });
 
-    // Type assertion - response da API Tiny
-    const produtoData = response as Record<string, unknown>;
+      // Type assertion - response da API Tiny
+      const produtoData = response as Record<string, unknown>;
 
-    const produto: CachedProduto = {
-      id: produtoId,
-      sku: String(produtoData.codigo || produtoData.sku || ""),
-      descricao: String(produtoData.descricao || produtoData.nome || ""),
-      categoria: 
-        produtoData.categoria && 
-        typeof produtoData.categoria === 'object' && 
-        produtoData.categoria !== null &&
-        'id' in produtoData.categoria
-        ? {
-            id: Number((produtoData.categoria as Record<string, unknown>).id),
-            nome: String((produtoData.categoria as Record<string, unknown>).nome || "Sem categoria"),
-          }
-        : undefined,
-      unidade: produtoData.unidade ? String(produtoData.unidade) : undefined,
-      preco: produtoData.preco ? Number(produtoData.preco) : undefined,
-    };
+      const produto: CachedProduto = {
+        id: produtoId,
+        sku: String(produtoData.codigo || produtoData.sku || ""),
+        descricao: String(produtoData.descricao || produtoData.nome || ""),
+        categoria: 
+          produtoData.categoria && 
+          typeof produtoData.categoria === 'object' && 
+          produtoData.categoria !== null &&
+          'id' in produtoData.categoria
+          ? {
+              id: Number((produtoData.categoria as Record<string, unknown>).id),
+              nome: String((produtoData.categoria as Record<string, unknown>).nome || "Sem categoria"),
+              caminhoCompleto: (produtoData.categoria as Record<string, unknown>).caminhoCompleto 
+                ? String((produtoData.categoria as Record<string, unknown>).caminhoCompleto)
+                : undefined,
+            }
+          : undefined,
+        unidade: produtoData.unidade ? String(produtoData.unidade) : undefined,
+        preco: produtoData.preco ? Number(produtoData.preco) : undefined,
+      };
 
-    // Salvar no cache
-    cache.produtos.set(produtoId, produto);
+      // Salvar no cache
+      cache.produtos.set(produtoId, produto);
 
-    return produto;
-  } catch (error) {
-    console.warn(`[Enrichment] Falha ao buscar produto ${produtoId}:`, error);
-    return null;
+      // Log sucesso se foi retry
+      if (attempt > 1) {
+        console.log(`[Enrichment] ✅ Produto ${produtoId} obtido após ${attempt} tentativas`);
+      }
+
+      return produto;
+    } catch (error) {
+      // Se for último retry, desistir
+      if (attempt === retries) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.warn(`[Enrichment] ❌ Falha ao buscar produto ${produtoId} após ${retries} tentativas: ${errorMsg}`);
+        return null;
+      }
+      
+      // Backoff exponencial: 500ms, 1000ms, 2000ms
+      const delay = 500 * Math.pow(2, attempt - 1);
+      console.log(`[Enrichment] ⚠️  Tentativa ${attempt}/${retries} falhou para produto ${produtoId}, retry em ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+
+  return null;
 }
 
 /**

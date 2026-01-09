@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
 import { auth } from "@/auth";
 import { reports, ReportView } from "@/app/relatorios/config";
 import { buildXlsx } from "@/exports/xlsx";
+import { buildJson } from "@/exports/json";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { RoleAssignment } from "@/types/next-auth";
 
 import { fetchRowsForExport } from "../utils";
 
@@ -14,10 +15,11 @@ const unauthorized = () =>
 
 export async function GET(
   request: NextRequest,
-  // Next 16: tipo de params para segment com extensão ([view].xlsx) vira `{}`; ignoramos e extraímos do pathname
+  { params }: { params: Promise<{ view: string }> }
 ) {
-  const match = request.nextUrl.pathname.match(/\/api\/exports\/(.+)\.xlsx$/);
-  const view = (match?.[1] ?? "") as ReportView;
+  const { view: viewParam } = await params;
+  const view = viewParam as ReportView;
+  
   if (!reports[view]) {
     return NextResponse.json({ error: "View inválida" }, { status: 404 });
   }
@@ -29,7 +31,9 @@ export async function GET(
   }
 
   const searchParams = request.nextUrl.searchParams;
+  const format = searchParams.get("format") ?? "xlsx"; // padrão: xlsx
   const companyId = searchParams.get("companyId") ?? undefined;
+  
   if (!companyId) {
     return NextResponse.json(
       { error: "companyId é obrigatório" },
@@ -37,8 +41,7 @@ export async function GET(
     );
   }
 
-  const companies = session.user.companies as Array<{ companyId: string }>;
-  if (!companies.some((c) => c.companyId === companyId)) {
+  if (!(session.user.companies as RoleAssignment[]).some((c) => c.companyId === companyId)) {
     return unauthorized();
   }
 
@@ -51,24 +54,38 @@ export async function GET(
     limit: Number(searchParams.get("limit") ?? "5000"),
   };
 
-  const rows = await fetchRowsForExport(view, filters);const buffer = await buildXlsx(view, rows);
+  const rows = await fetchRowsForExport(view, filters);
 
+  // Registrar auditoria
   await prisma.auditLog.create({
     data: {
       actorUserId: session.user.id,
       companyId,
       action: "EXPORT",
-      metadata: { view, filters },
+      metadata: { view, format, filters },
     },
   });
 
-  return new NextResponse(buffer, {
-    status: 200,
-    headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename=\"${view}.xlsx\"`,
-    },
-  });
+  // Exportar no formato solicitado
+  if (format === "json") {
+    const buffer = await buildJson(view, rows);
+    return new Response(buffer.toString("utf-8"), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${view}.json"`,
+      },
+    });
+  } else {
+    // xlsx por padrão
+    const buffer = await buildXlsx(view, rows);
+    return new NextResponse(buffer, {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${view}.xlsx"`,
+      },
+    });
+  }
 }
-

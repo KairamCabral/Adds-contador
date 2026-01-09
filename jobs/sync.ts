@@ -197,7 +197,15 @@ const syncVendas = async (
     );
 
     // Buscar pedidos
-    const pedidos = await listAllPedidos(connection, dataInicial, dataFinal);
+    let pedidos = await listAllPedidos(connection, dataInicial, dataFinal);
+    
+    // Limitar pedidos em modo dev (quando datas específicas são fornecidas)
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    if (isDevMode && pedidos.length > 10) {
+      console.log(`[Sync ${module}] MODO DEV: Limitando de ${pedidos.length} para 10 pedidos`);
+      pedidos = pedidos.slice(0, 10);
+    }
+    
     console.log(`[Sync ${module}] Encontrados ${pedidos.length} pedidos`);
 
     // FASE 1: Coletar IDs únicos de produtos para enrichment
@@ -230,9 +238,9 @@ const syncVendas = async (
     const produtosEnriquecidos = new Map<number, any>();
     const produtoIdsArray = Array.from(produtoIds);
     
-    // Buscar produtos com concorrência limitada (5 por vez)
-    for (let i = 0; i < produtoIdsArray.length; i += 5) {
-      const batch = produtoIdsArray.slice(i, i + 5);
+    // Buscar produtos com concorrência limitada (3 por vez, mais conservador)
+    for (let i = 0; i < produtoIdsArray.length; i += 3) {
+      const batch = produtoIdsArray.slice(i, i + 3);
       const results = await Promise.allSettled(
         batch.map(id => getProduto(connection, id))
       );
@@ -240,12 +248,14 @@ const syncVendas = async (
       results.forEach((result, idx) => {
         if (result.status === 'fulfilled' && result.value) {
           produtosEnriquecidos.set(batch[idx], result.value);
+        } else if (result.status === 'rejected') {
+          console.warn(`[Sync] Produto ${batch[idx]} falhou no enrichment:`, result.reason?.message || 'Unknown error');
         }
       });
       
-      // Pequeno delay entre batches para evitar rate limit 429
-      if (i + 5 < produtoIdsArray.length) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+      // Delay maior entre batches para evitar rate limit 429 (600ms)
+      if (i + 3 < produtoIdsArray.length) {
+        await new Promise(resolve => setTimeout(resolve, 600));
       }
     }
 
@@ -387,12 +397,21 @@ const syncContasReceberPosicao = async (
     console.log(
       `[Sync ${module}] Buscando contas a receber de ${dataInicial.toISOString()} até ${dataFinal.toISOString()}`
     );// Buscar apenas contas abertas para posição
-    const contas = await listAllContasReceber(
+    let contas = await listAllContasReceber(
       connection,
       dataInicial,
       dataFinal,
       "aberto"
-    );console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);for (const conta of contas) {
+    );
+    
+    // Limitar em modo dev
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    if (isDevMode && contas.length > 10) {
+      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
+      contas = contas.slice(0, 10);
+    }
+    
+    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);for (const conta of contas) {
       try {
         const posicao = transformContaReceberToPosicao(
           companyId,
@@ -485,12 +504,20 @@ const syncContasPagar = async (
     );
 
     // Buscar todas as contas (abertas)
-    const contas = await listAllContasPagar(
+    let contas = await listAllContasPagar(
       connection,
       dataInicial,
       dataFinal,
       "aberto"
     );
+    
+    // Limitar em modo dev
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    if (isDevMode && contas.length > 10) {
+      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
+      contas = contas.slice(0, 10);
+    }
+    
     console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
 
     for (const conta of contas) {
@@ -570,12 +597,23 @@ const syncContasPagas = async (
     }
 
     // Buscar contas pagas
-    const contas = await listAllContasPagar(
+    let contas = await listAllContasPagar(
       connection,
       dataInicial,
       dataFinal,
       "pago"
-    );for (const conta of contas) {
+    );
+    
+    // Limitar em modo dev
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    if (isDevMode && contas.length > 10) {
+      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
+      contas = contas.slice(0, 10);
+    }
+    
+    console.log(`[Sync ${module}] Processando ${contas.length} contas pagas`);
+    
+    for (const conta of contas) {
       try {
         const contaView = transformContaPagaToView(companyId, conta);
         if (!contaView) continue;
@@ -651,12 +689,23 @@ const syncContasRecebidas = async (
     }
 
     // Buscar contas recebidas
-    const contas = await listAllContasReceber(
+    let contas = await listAllContasReceber(
       connection,
       dataInicial,
       dataFinal,
       "pago"
-    );for (const conta of contas) {
+    );
+    
+    // Limitar em modo dev
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    if (isDevMode && contas.length > 10) {
+      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
+      contas = contas.slice(0, 10);
+    }
+    
+    console.log(`[Sync ${module}] Processando ${contas.length} contas recebidas`);
+    
+    for (const conta of contas) {
       try {
         const contaView = transformContaRecebidaToView(companyId, conta);
         if (!contaView) continue;
@@ -707,7 +756,8 @@ const syncContasRecebidas = async (
 
 const syncEstoque = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_estoque";
   const errors: string[] = [];
@@ -718,9 +768,17 @@ const syncEstoque = async (
     // Estoque é um snapshot, sempre busca posição completa atual
     const now = new Date();
     const dataSnapshot = now;
+    
+    // Detectar modo dev
+    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
+    const maxPages = isDevMode ? 1 : Infinity; // Limitar a 1 página em modo dev (~50 produtos)
 
-    console.log(`[Sync ${module}] Aguardando 5s para evitar rate limit...`);
-    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos de pausa
+    if (!isDevMode) {
+      console.log(`[Sync ${module}] Aguardando 5s para evitar rate limit...`);
+      await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos de pausa
+    } else {
+      console.log(`[Sync ${module}] MODO DEV: Pulando delay e limitando a ${maxPages} páginas`);
+    }
 
     console.log(`[Sync ${module}] Buscando e processando produtos em streaming...`);
 
@@ -779,6 +837,12 @@ const syncEstoque = async (
 
         // Verificar se há mais páginas
         hasMore = response.numero_paginas ? pagina < response.numero_paginas : response.itens.length >= 50;
+        
+        // Limitar páginas em modo dev
+        if (pagina >= maxPages) {
+          console.log(`[Sync ${module}] MODO DEV: Limite de ${maxPages} páginas atingido`);
+          hasMore = false;
+        }
         
         if (hasMore) {
           pagina++;
@@ -855,7 +919,7 @@ const syncByModule = async (
         result = await syncContasRecebidas(companyId, connection, options);
         break;
       case "vw_estoque":
-        result = await syncEstoque(companyId, connection);
+        result = await syncEstoque(companyId, connection, options);
         break;
       default:
         result = { module: mod, processed: 0, skipped: 0, errors: ["Módulo não implementado"] };
@@ -894,7 +958,9 @@ export async function runSync(options: SyncOptions) {
         take: 1,
       },
     },
-  });if (companies.length === 0) {
+  });
+
+  if (companies.length === 0) {
     console.log("[Sync] Nenhuma empresa encontrada");
     return {
       runIds: [],

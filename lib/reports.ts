@@ -37,10 +37,21 @@ export const buildWhere = (
   };
 
   if (filters.start || filters.end) {
-    where[config.dateField] = {
-      ...(filters.start ? { gte: new Date(filters.start) } : {}),
-      ...(filters.end ? { lte: new Date(filters.end) } : {}),
-    };
+    const dateFilter: Record<string, Date> = {};
+    
+    if (filters.start) {
+      // Data inicial: início do dia (00:00:00) no horário local
+      const startDate = new Date(filters.start + 'T00:00:00-03:00');
+      dateFilter.gte = startDate;
+    }
+    
+    if (filters.end) {
+      // Data final: final do dia (23:59:59.999) no horário local
+      const endDate = new Date(filters.end + 'T23:59:59.999-03:00');
+      dateFilter.lte = endDate;
+    }
+    
+    where[config.dateField] = dateFilter;
   }
 
   if (filters.status && config.statusField) {

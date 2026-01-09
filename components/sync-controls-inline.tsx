@@ -12,9 +12,10 @@ type Props = {
 };
 
 export function SyncControlsInline({ companyId, lastSync }: Props) {
+  const isDev = process.env.NODE_ENV === 'development';
   const [loading, setLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [syncMode, setSyncMode] = useState<"quick" | "month">("quick");
+  const [syncMode, setSyncMode] = useState<"quick" | "dev" | "month">("quick");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -33,7 +34,18 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
       let endpoint = "/api/admin/sync";
       let body: Record<string, unknown> = { companyId };
 
-      if (syncMode === "month" && selectedMonth) {
+      if (syncMode === "dev") {
+        // Modo desenvolvimento: apenas últimos 3 dias
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        
+        endpoint = "/api/admin/sync/period";
+        body = {
+          companyId,
+          startDate: threeDaysAgo.toISOString(),
+          endDate: new Date().toISOString(),
+        };
+      } else if (syncMode === "month" && selectedMonth) {
         const [year, month] = selectedMonth.split("-").map(Number);
         const startDate = new Date(year, month - 1, 1);
         const endDate = new Date(year, month, 0, 23, 59, 59);
@@ -92,6 +104,22 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         >
           30d
         </button>
+        
+        {isDev && (
+          <button
+            onClick={() => setSyncMode("dev")}
+            disabled={loading}
+            className={`px-2 py-1 text-xs font-medium transition-colors ${
+              syncMode === "dev"
+                ? "bg-amber-600 text-white"
+                : "bg-slate-800 text-slate-400 hover:text-slate-300"
+            }`}
+            title="Modo desenvolvimento - apenas 3 dias"
+          >
+            3d 🔧
+          </button>
+        )}
+        
         <button
           onClick={() => {
             setSyncMode("month");

@@ -90,12 +90,23 @@ export function toDate(value: unknown): Date | null {
       return isNaN(date.getTime()) ? null : date;
     }
 
-    // BR: DD/MM/YYYY
+    // BR: DD/MM/YYYY ou DD/MM/YYYY HH:mm:ss
     if (value.includes("/")) {
-      const parts = value.split("/");
+      const [datePart, timePart] = value.split(" ");
+      const parts = datePart.split("/");
       if (parts.length === 3) {
         const [day, month, year] = parts.map((p) => parseInt(p, 10));
-        const date = new Date(year, month - 1, day);
+        
+        // Se tem hora, extrair HH:mm:ss
+        let hour = 0, minute = 0, second = 0;
+        if (timePart && timePart.includes(":")) {
+          const timeParts = timePart.split(":");
+          hour = parseInt(timeParts[0] || "0", 10);
+          minute = parseInt(timeParts[1] || "0", 10);
+          second = parseInt(timeParts[2] || "0", 10);
+        }
+        
+        const date = new Date(year, month - 1, day, hour, minute, second);
         return isNaN(date.getTime()) ? null : date;
       }
     }

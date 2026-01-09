@@ -21,12 +21,18 @@ export async function fetchRowsForExport(
   const take = Math.min(filters.limit ?? 5000, 10000);
 
   switch (view) {
-    case "vw_vendas":
+    case "vw_vendas": {
+      const vendasWhere = where as Prisma.VwVendasWhereInput;
+      // Excluir pedidos "Em aberto"
+      vendasWhere.status = {
+        not: "Em aberto",
+      };
       return prisma.vwVendas.findMany({
-        where: where as Prisma.VwVendasWhereInput,
+        where: vendasWhere,
         orderBy: { dataHora: "desc" },
         take,
       });
+    }
     case "vw_contas_receber_posicao":
       return prisma.vwContasReceberPosicao.findMany({
         where: where as Prisma.VwContasReceberPosicaoWhereInput,

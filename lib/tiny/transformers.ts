@@ -17,7 +17,6 @@ import {
   pickFirst,
   safeGet,
 } from "@/lib/converters";
-import { debugMapping, debugWarn } from "@/lib/debug";
 import { getFirst, getPathFirst } from "./field";
 
 // ============================================
@@ -31,31 +30,163 @@ const generateId = (companyId: string, externalId: number | string): string => {
   return `${companyId}_${externalId}`;
 };
 
+/**
+ * Converte valor unknown para Record seguro (null se não for objeto)
+ */
+const asRecord = (v: unknown): Record<string, unknown> | null => {
+  if (!v || typeof v !== 'object') return null;
+  return v as Record<string, unknown>;
+};
+
+/**
+ * Unwrap pedido detalhe que pode vir envolvido em wrappers
+ * Detecta automaticamente a estrutura correta procurando por campos-chave
+ */
+const unwrapPedidoDetalhe = (input: unknown): Record<string, unknown> => {
+  const obj = asRecord(input);
+  if (!obj) return {};
+  
+  // Se já tem 'itens' ou 'numero' ou 'cliente' na raiz, está correto
+  if (obj.itens || obj.numero || obj.numeroPedido || obj.cliente) {
+    return obj;
+  }
+  
+  // Tentar unwrap comum: response.pedido
+  if (obj.pedido && asRecord(obj.pedido)) {
+    const pedido = asRecord(obj.pedido);
+    if (pedido && (pedido.itens || pedido.numero || pedido.cliente)) {
+      return pedido;
+    }
+  }
+  
+  // Tentar unwrap: response.retorno.pedido
+  if (obj.retorno && asRecord(obj.retorno)) {
+    const retorno = asRecord(obj.retorno);
+    if (retorno?.pedido && asRecord(retorno.pedido)) {
+      return asRecord(retorno.pedido) || {};
+    }
+  }
+  
+  // Retornar original se não detectar wrapper
+  return obj;
+};
+
+/**
+ * Unwrap pedido resumo
+ */
+const unwrapPedidoResumo = (input: unknown): Record<string, unknown> => {
+  const obj = asRecord(input);
+  if (!obj) return {};
+  
+  // Se já tem 'id' ou 'numero' na raiz, está correto
+  if (obj.id || obj.numero) {
+    return obj;
+  }
+  
+  // Tentar unwrap
+  if (obj.pedido && asRecord(obj.pedido)) {
+    return asRecord(obj.pedido) || {};
+  }
+  
+  return obj;
+};
+
+/**
+ * Extrai array de itens do detalhe (suporta múltiplas estruturas)
+ */
+const extractItens = (detalhe: Record<string, unknown>): Record<string, unknown>[] => {
+  // Tentar acessos diretos
+  if (Array.isArray(detalhe.itens)) return detalhe.itens as Record<string, unknown>[];
+  if (Array.isArray(detalhe.items)) return detalhe.items as Record<string, unknown>[];
+  
+  // Tentar estrutura aninhada { itens: { item: [...] } }
+  const itensObj = asRecord(detalhe.itens);
+  if (itensObj && Array.isArray(itensObj.item)) {
+    return itensObj.item as Record<string, unknown>[];
+  }
+  
+  // Tentar pedido.itens
+  const pedidoObj = asRecord(detalhe.pedido);
+  if (pedidoObj) {
+    if (Array.isArray(pedidoObj.itens)) return pedidoObj.itens as Record<string, unknown>[];
+    const itensNested = asRecord(pedidoObj.itens);
+    if (itensNested && Array.isArray(itensNested.item)) {
+      return itensNested.item as Record<string, unknown>[];
+    }
+  }
+  
+  return [];
+};
+
+/**
+ * Normaliza status para texto amigável
+ */
+const normalizeStatus = (raw: unknown): string => {
+  if (raw === undefined || raw === null) return "Desconhecido";
+  
+  // Se já é string, tentar extrair número de "SITUACAO_X" ou mapear
+  if (typeof raw === 'string') {
+    // Tentar extrair número de padrões como "SITUACAO_7", "SITUAÇÃO 7", etc
+    const situacaoMatch = raw.match(/SITUA[CÇ][AÃ]O[_\s]*(\d+)/i);
+    if (situacaoMatch) {
+      const num = parseInt(situacaoMatch[1], 10);
+      // Mapear o número extraído
+      const numMap: Record<number, string> = {
+        0: 'Cancelado',
+        1: 'Aprovado',
+        2: 'Cancelado',
+        3: 'Atendido',
+        4: 'Preparando envio',
+        5: 'Faturado',
+        6: 'Pronto para envio',
+        7: 'Pronto para envio',
+      };
+      return numMap[num] || 'Pronto para envio';
+    }
+    
+    // Mapear strings legíveis conhecidas
+    const lower = raw.toLowerCase().trim();
+    const statusMap: Record<string, string> = {
+      'aprovado': 'Aprovado',
+      'faturado': 'Faturado',
+      'concluido': 'Concluído',
+      'concluída': 'Concluído',
+      'cancelado': 'Cancelado',
+      'cancelada': 'Cancelado',
+      'estornado': 'Estornado',
+      'estornada': 'Estornado',
+      'em aberto': 'Em aberto',
+      'atendido': 'Atendido',
+      'preparando envio': 'Preparando envio',
+      'pronto para envio': 'Pronto para envio',
+    };
+    return statusMap[lower] || raw;
+  }
+  
+  // Se é número, mapear diretamente
+  if (typeof raw === 'number') {
+    const numMap: Record<number, string> = {
+      0: 'Cancelado',
+      1: 'Aprovado',
+      2: 'Cancelado',
+      3: 'Atendido',
+      4: 'Preparando envio',
+      5: 'Faturado',
+      6: 'Pronto para envio',
+      7: 'Pronto para envio',
+    };
+    return numMap[raw] || 'Concluído';
+  }
+  
+  return 'Status desconhecido';
+};
+
 // ============================================
 // VW_VENDAS (de Pedidos)
 // ============================================
 
 export type VwVendasInput = Prisma.VwVendasCreateInput;
 
-/**
- * Mapeia código de situação para texto legível (baseado em docs Tiny V3)
- */
-const mapSituacao = (codigo?: number | string): string => {
-  if (codigo === undefined || codigo === null) {
-    return "Desconhecido";
-  }
-  
-  const map: Record<string, string> = {
-    "0": "Em aberto",
-    "1": "Aprovado",
-    "2": "Cancelado",
-    "3": "Atendido",
-    "4": "Preparando envio",
-    "5": "Faturado",
-    "6": "Pronto para envio",
-  };
-  return map[String(codigo)] ?? `SITUACAO_${codigo}`;
-};
 
 /**
  * Transforma pedido DETALHE completo em linhas de vw_vendas
@@ -69,115 +200,197 @@ export function transformPedidoDetalheToVendas(
   detalhe: TinyPedidoDetalhe,
   enrichData?: { produtos?: Map<number, unknown> }
 ): VwVendasInput[] {
-  // Extração segura de campos aninhados com fallback camel/snake
-  const dataStr = getFirst<string>(detalhe, ["dataPedido", "data_pedido", "data"]);
+  // Normalizar detalhe (unwrap se necessário)
+  const d = unwrapPedidoDetalhe(detalhe);
+  
+  // ========== EXTRAIR CAMPOS COMUNS ==========
+  
+  // Data: múltiplos fallbacks (API Tiny v3 não fornece hora, apenas data)
+  const dataStr = getFirst<string>(d, [
+    "data", "data_pedido", "dataPedido",
+    "dataFaturamento", "data_faturamento",
+    "dataEmissao", "data_emissao"
+  ]);
+  
   const dataHora = toDate(dataStr) ?? new Date();
   
-  const cliente = safeText(
-    getPathFirst(detalhe, [["cliente", "nome"]]) as string,
-    "Cliente não identificado"
-  );
-  const cnpjCliente = safeText(
-    getPathFirst(detalhe, [["cliente", "cpfCnpj"], ["cliente", "cpf_cnpj"]]) as string
-  );
-  const vendedor = safeText(
-    getPathFirst(detalhe, [["vendedor", "nome"]]) as string
-  );
+  // Número do pedido (NUNCA undefined)
+  const numPedidoRaw = getFirst<string | number>(d, [
+    "numeroPedido", "numero_pedido", "numero",
+    "id", "pedidoId", "pedido_id"
+  ]);
+  const numeroPedido = numPedidoRaw !== undefined && numPedidoRaw !== null 
+    ? String(numPedidoRaw) 
+    : String(d.id || "0");
   
-  // Forma de pagamento completa (forma + meio)
-  const formaPagto = safeText(safeGet(detalhe, ["pagamento", "formaPagamento", "nome"]));
-  const meioPagto = safeText(safeGet(detalhe, ["pagamento", "meioPagamento", "nome"]));
-  const formaPagamento = pickFirst(
-    meioPagto ? `${formaPagto} (${meioPagto})` : formaPagto,
-    formaPagto,
-    ""
-  ) || "N/D";
-
-  // "Caixa" = origem da venda (marketplace, meio pagamento, depósito)
-  const caixa = pickFirst(
-    safeGet(detalhe, ["ecommerce", "nome"]),
-    safeGet(detalhe, ["pagamento", "meioPagamento", "nome"]),
-    safeGet(detalhe, ["deposito", "nome"]),
-    ""
-  ) || "N/D";
-
-  const situacaoRaw = getFirst<string | number>(detalhe, ["situacao", "situacaoCodigo"]);
-  const status = mapSituacao(situacaoRaw);
-  const itens = getFirst<TinyPedidoItem[]>(detalhe, ["itens"]) ?? [];
+  // Cliente
+  const clienteRaw = getPathFirst(d, [
+    ["cliente", "nome"],
+    ["nome_cliente"]
+  ]) as string;
+  const cliente = safeText(clienteRaw, "Cliente não identificado");
   
-  if (itens.length === 0) {
-    // Pedido sem itens: criar linha única com valor total
-    debugWarn("vw_vendas", "itens", itens, "detalhe.itens");
-    
-    const numeroPedido = getFirst(detalhe, ["numeroPedido", "numero_pedido", "numero"]);
-    const valorTotal = getFirst(detalhe, ["valorTotalPedido", "valor_total_pedido", "total", "valor"]);
-    
-    return [
-      {
-        id: generateId(companyId, detalhe.id),
-        company: { connect: { id: companyId } },
-        dataHora,
-        produto: `Pedido #${numeroPedido ?? detalhe.id}`,
-        categoria: "N/D",
-        quantidade: toPrismaDecimal(1),
-        valorUnitario: toPrismaDecimal(valorTotal),
-        valorTotal: toPrismaDecimal(valorTotal),
-        formaPagamento,
-        vendedor,
-        cliente,
-        cnpjCliente,
-        caixa,
-        status,
-      },
-    ];
+  // CPF/CNPJ do cliente
+  const cnpjRaw = getPathFirst(d, [
+    ["cliente", "cpfCnpj"],
+    ["cliente", "cpf_cnpj"],
+    ["cliente", "documento"],
+    ["cpf_cnpj"]
+  ]) as string;
+  const cnpjCliente = safeText(cnpjRaw) || "";
+  
+  // Vendedor
+  const vendedorRaw = getPathFirst(d, [
+    ["vendedor", "nome"],
+    ["nome_vendedor"]
+  ]) as string;
+  const vendedor = safeText(vendedorRaw) || "-";
+  
+  // Forma de pagamento (tentar múltiplos caminhos)
+  const formaPagtoRaw = getPathFirst(d, [
+    ["pagamento", "formaPagamento", "nome"],
+    ["pagamento", "forma_pagamento", "nome"],
+    ["formaPagamento", "nome"],
+    ["forma_pagamento"]
+  ]) as string;
+  const meioPagtoRaw = getPathFirst(d, [
+    ["pagamento", "meioPagamento", "nome"],
+    ["pagamento", "meio_pagamento", "nome"],
+    ["meioPagamento", "nome"],
+    ["meio_pagamento"]
+  ]) as string;
+  
+  const formaPagto = safeText(formaPagtoRaw);
+  const meioPagto = safeText(meioPagtoRaw);
+  
+  let formaPagamento = "N/D";
+  if (formaPagto && formaPagto !== "-") {
+    if (meioPagto && meioPagto !== "-") {
+      formaPagamento = `${formaPagto} (${meioPagto})`;
+    } else {
+      formaPagamento = formaPagto;
+    }
+  } else if (meioPagto && meioPagto !== "-") {
+    formaPagamento = meioPagto;
   }
 
-  return itens.map((item: TinyPedidoItem, idx: number) => {
-    // Suporte para snake_case e camelCase usando helpers
-    const qtdRaw = getFirst(item, ["quantidade", "qtd"]);
-    const vlrUnitRaw = getFirst(item, ["valorUnitario", "valor_unitario"]);
+  // Caixa (prioridade: ecommerce > deposito > meio > pdv/caixa)
+  const caixaNomes = [
+    getPathFirst(d, [["ecommerce", "nome"]]) as string,
+    getPathFirst(d, [["deposito", "nome"]]) as string,
+    meioPagtoRaw,
+    getFirst<string>(d, ["pdv", "caixa", "numero_caixa"])
+  ];
+  const caixa = caixaNomes.map(n => safeText(n)).find(n => n && n !== "-") || "N/D";
+
+  // Status (normalizado) - API Tiny retorna situacao como número
+  const situacaoRaw = getFirst<string | number>(d, [
+    "situacao",           // Número do status (prioridade)
+    "situacaoCodigo",     // Fallback
+    "status"              // Fallback genérico
+  ]);
+  const status = normalizeStatus(situacaoRaw);
+  
+  // Extrair itens (suporta múltiplas estruturas)
+  const itens = extractItens(d);
+  
+  // ========== CASO: PEDIDO SEM ITENS ==========
+  if (itens.length === 0) {
+    const valorTotalRaw = getFirst(d, [
+      "valorTotalPedido", "valor_total_pedido", "total", "valor"
+    ]);
+    const valorTotal = toPrismaDecimal(valorTotalRaw, 0);
     
+    return [{
+      id: generateId(companyId, d.id as number),
+      company: { connect: { id: companyId } },
+      dataHora,
+      produto: `Pedido #${numeroPedido}`,
+      categoria: "N/D",
+      quantidade: toPrismaDecimal(1),
+      valorUnitario: valorTotal,
+      valorTotal,
+      formaPagamento,
+      vendedor,
+      cliente,
+      cnpjCliente,
+      caixa,
+      status,
+    }];
+  }
+
+  // ========== CASO: PEDIDO COM ITENS ==========
+  return itens.map((item: Record<string, unknown>, idx: number) => {
+    // Quantidade
+    const qtdRaw = getFirst(item, ["quantidade", "qtd", "qtde"]);
     const quantidade = toPrismaDecimal(qtdRaw, 0);
+    
+    // Valor unitário
+    const vlrUnitRaw = getFirst(item, [
+      "valorUnitario", "valor_unitario",
+      "preco", "preco_unitario", "valor"
+    ]);
     const valorUnitario = toPrismaDecimal(vlrUnitRaw, 0);
     
-    // Calcular valor total do item (quantidade × valorUnitario)
-    const qtdNum = parseFloat(toDecimal(qtdRaw) ?? "0");
-    const vlrNum = parseFloat(toDecimal(vlrUnitRaw) ?? "0");
-    const valorTotal = toPrismaDecimal(qtdNum * vlrNum, 0);
+    // Valor total (preferir do item, senão calcular)
+    const vlrTotalRaw = getFirst(item, [
+      "valorTotal", "valor_total", "total", "valor_total_item"
+    ]);
+    const valorTotal = vlrTotalRaw 
+      ? toPrismaDecimal(vlrTotalRaw, 0)
+      : toPrismaDecimal(parseFloat(toDecimal(qtdRaw) ?? "0") * parseFloat(toDecimal(vlrUnitRaw) ?? "0"), 0);
 
-    const produto = safeText(
-      getPathFirst(item, [["produto", "descricao"], ["descricao"]]) as string,
-      "Produto não identificado"
-    );
-    const produtoId = getPathFirst<number>(item, [["produto", "id"]]);
+    // Produto (múltiplos fallbacks)
+    const produtoDescRaw = getPathFirst(item, [
+      ["produto", "descricao"],
+      ["produto", "nome"],
+      ["descricao"],
+      ["nome"]
+    ]) as string;
     
-    // Tentar buscar categoria do enrichment (se fornecido)
-    let categoria = "-";
+    let produto = safeText(produtoDescRaw);
+    if (!produto || produto === "-") {
+      // Tentar SKU/código como fallback
+      const skuRaw = getPathFirst(item, [
+        ["produto", "sku"],
+        ["produto", "codigo"],
+        ["sku"],
+        ["codigo"]
+      ]) as string;
+      produto = safeText(skuRaw) || `Pedido #${numeroPedido}`;
+    }
+    
+    // ID do produto (para enrichment)
+    const produtoId = getPathFirst<number>(item, [
+      ["produto", "id"],
+      ["id_produto"],
+      ["produtoId"]
+    ]);
+    
+    // Categoria (do enrichment - API Tiny só retorna em /produtos/{id})
+    // Preferir caminhoCompleto (mais descritivo), fallback para nome
+    let categoria = "N/D";
+    
     if (enrichData?.produtos && produtoId) {
       const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));
-      
-      // Type guard para extrair categoria
-      if (produtoEnriquecido && typeof produtoEnriquecido === 'object') {
-        const prod = produtoEnriquecido as Record<string, unknown>;
-        const cat = prod.categoria as Record<string, unknown> | undefined;
-        if (cat?.nome) {
-          categoria = String(cat.nome);
+      if (produtoEnriquecido && typeof produtoEnriquecido === 'object' && produtoEnriquecido !== null) {
+        const cat = (produtoEnriquecido as Record<string, unknown>).categoria as { 
+          nome?: string;
+          caminhoCompleto?: string;
+        } | undefined;
+        
+        if (cat?.caminhoCompleto) {
+          // Preferir caminho completo (ex: "Escovas -> Extra Macia -> Implante")
+          categoria = cat.caminhoCompleto;
+        } else if (cat?.nome) {
+          // Fallback para apenas o nome
+          categoria = cat.nome;
         }
       }
     }
 
-    // Debug para primeiro item
-    if (idx === 0) {debugMapping("vw_vendas", item, {
-        produto,
-        categoria,
-        quantidade: quantidade.toString(),
-        valorUnitario: valorUnitario.toString(),
-        valorTotal: valorTotal.toString(),
-      }, idx);
-    }
-
     return {
-      id: generateId(companyId, `${detalhe.id}_${idx}`),
+      id: generateId(companyId, `${d.id}_${idx}`),
       company: { connect: { id: companyId } },
       dataHora,
       produto,
@@ -236,29 +449,69 @@ export function transformPedidoToVendas(
 
 /**
  * Transforma pedido resumido em venda única (sem itens detalhados)
+ * Usado como fallback quando getPedido falha
  */
 export function transformPedidoResumoToVenda(
   companyId: string,
   pedido: TinyPedidoResumo
 ): VwVendasInput {
-  const dataHora = toDate(pedido.data_pedido) ?? new Date();
-  const valor = toPrismaDecimal(pedido.valor, 0);
+  // Normalizar resumo
+  const p = unwrapPedidoResumo(pedido);
+  
+  // Data
+  const dataStr = getFirst<string>(p, ["data_pedido", "dataPedido", "data"]);
+  const dataHora = toDate(dataStr) ?? new Date();
+  
+  // Valor
+  const valorRaw = getFirst(p, ["valor", "total", "valorTotal"]);
+  const valor = toPrismaDecimal(valorRaw, 0);
+  
+  // Número do pedido (NUNCA undefined)
+  const numeroRaw = getFirst<string | number>(p, [
+    "numero", "numeroPedido", "numero_pedido", "id", "pedidoId"
+  ]);
+  const numeroSeguro = numeroRaw !== undefined && numeroRaw !== null 
+    ? String(numeroRaw) 
+    : String(p.id || "0");
+  
+  // Cliente
+  const clienteNome = getPathFirst(p, [
+    ["cliente", "nome"],
+    ["nome_cliente"]
+  ]) as string;
+  const cliente = safeText(clienteNome) || "N/D";
+  
+  // CPF/CNPJ
+  const cpfCnpjRaw = getPathFirst(p, [
+    ["cliente", "cpf_cnpj"],
+    ["cliente", "cpfCnpj"],
+    ["cliente", "documento"]
+  ]) as string;
+  const cnpjCliente = safeText(cpfCnpjRaw) || "";
+  
+  // Vendedor
+  const vendedorRaw = getFirst<string>(p, ["nome_vendedor", "vendedor"]);
+  const vendedor = safeText(vendedorRaw) || "-";
+  
+  // Status
+  const situacaoRaw = getFirst(p, ["situacao", "status"]);
+  const status = normalizeStatus(situacaoRaw);
 
   return {
-    id: generateId(companyId, pedido.id),
+    id: generateId(companyId, p.id as number),
     company: { connect: { id: companyId } },
     dataHora,
-    produto: `Pedido #${pedido.numero}`,
+    produto: `Pedido #${numeroSeguro}`,
     categoria: "N/D",
     quantidade: toPrismaDecimal(1),
     valorUnitario: valor,
     valorTotal: valor,
     formaPagamento: "N/D",
-    vendedor: safeText(pedido.nome_vendedor) || "N/D",
-    cliente: safeText(pedido.cliente?.nome) || "N/D",
-    cnpjCliente: safeText(pedido.cliente?.cpf_cnpj) || "N/D",
+    vendedor,
+    cliente,
+    cnpjCliente,
     caixa: "N/D",
-    status: safeText(pedido.situacao) || "N/D",
+    status,
   };
 }
 
