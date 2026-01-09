@@ -51,7 +51,7 @@ async function fixAdminPassword() {
     
     if (company) {
       // Atribuir role ADMIN
-      await prisma.companyMember.create({
+      await prisma.userCompanyRole.create({
         data: {
           userId: user.id,
           companyId: company.id,

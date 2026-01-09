@@ -36,7 +36,7 @@ export async function getDefaultCompanyIdForUser(userId: string): Promise<string
   }
 
   // Verificar se usuário tem acesso
-  const member = await prisma.companyMember.findFirst({
+  const member = await prisma.userCompanyRole.findFirst({
     where: {
       userId,
       companyId,
