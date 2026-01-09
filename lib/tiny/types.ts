@@ -40,65 +40,91 @@ export type TinyPedidoResumo = {
 };
 
 export type TinyPedidoItem = {
-  id: number;
+  id?: number;
   descricao?: string;
-  quantidade?: number;
-  valor_unitario?: number;
-  valorUnitario?: number;  // camelCase variant
-  valor_total?: number;
-  valorTotal?: number;  // camelCase variant
+  quantidade?: number | string;
+  valor_unitario?: number | string;
+  valorUnitario?: number | string;
+  valor_total?: number | string;
+  valorTotal?: number | string;
   codigo?: string;
+  sku?: string;
   unidade?: string;
   produto?: {
-    id: number;
-    descricao: string;
+    id?: number;
+    sku?: string;
+    descricao?: string;
     codigo?: string;
     unidade?: string;
     preco?: number;
+    [key: string]: unknown;
   };
+  [key: string]: unknown;
 };
 
 export type TinyPedidoDetalhe = {
   id: number;
-  numero?: string;
-  numeroPedido?: string;
+  numero?: string | number;
+  numeroPedido?: string | number;
+  numero_pedido?: string | number;
   data?: string;
   data_pedido?: string;
   dataPedido?: string;
   dataPrevista?: string;
   dataPrevisao?: string;
-  situacao: string | number;
+  data_prevista?: string;
+  situacao?: string | number;
   cliente?: {
     id?: number;
     nome?: string;
     cpf_cnpj?: string;
     cpfCnpj?: string;
+    [key: string]: unknown;
   };
   itens?: TinyPedidoItem[];
   forma_pagamento?: string;
+  formaPagamento?: string;
   observacoes?: string;
   vendedor?: {
     id?: number;
     nome?: string;
+    [key: string]: unknown;
   } | null;
   pagamento?: {
     formaPagamento?: {
       nome?: string;
+      [key: string]: unknown;
+    };
+    forma_pagamento?: {
+      nome?: string;
+      [key: string]: unknown;
     };
     meioPagamento?: {
       nome?: string;
+      [key: string]: unknown;
     };
+    meio_pagamento?: {
+      nome?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
   };
   ecommerce?: {
     nome?: string;
+    [key: string]: unknown;
   };
   deposito?: {
     nome?: string;
+    [key: string]: unknown;
   };
-  valor?: number;
-  desconto?: number;
-  total?: number;
-  valorTotalPedido?: number;
+  valor?: number | string;
+  desconto?: number | string;
+  total?: number | string;
+  valorTotal?: number | string;
+  valor_total?: number | string;
+  valorTotalPedido?: number | string;
+  valor_total_pedido?: number | string;
+  [key: string]: unknown;
 };
 
 // ============================================

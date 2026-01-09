@@ -18,6 +18,7 @@ import {
   safeGet,
 } from "@/lib/converters";
 import { debugMapping, debugWarn } from "@/lib/debug";
+import { getFirst, getPathFirst } from "./field";
 
 // ============================================
 // UTILITÁRIOS
@@ -64,11 +65,20 @@ export function transformPedidoDetalheToVendas(
   detalhe: TinyPedidoDetalhe,
   enrichData?: { produtos?: Map<number, unknown> }
 ): VwVendasInput[] {
-  // Extração segura de campos aninhados
-  const dataHora = toDate(detalhe.dataPedido ?? detalhe.data) ?? new Date();
-  const cliente = safeText(safeGet(detalhe, ["cliente", "nome"]), "Cliente não identificado");
-  const cnpjCliente = safeText(safeGet(detalhe, ["cliente", "cpfCnpj"]));
-  const vendedor = safeText(safeGet(detalhe, ["vendedor", "nome"]));
+  // Extração segura de campos aninhados com fallback camel/snake
+  const dataStr = getFirst<string>(detalhe, ["dataPedido", "data_pedido", "data"]);
+  const dataHora = toDate(dataStr) ?? new Date();
+  
+  const cliente = safeText(
+    getPathFirst(detalhe, [["cliente", "nome"]]) as string,
+    "Cliente não identificado"
+  );
+  const cnpjCliente = safeText(
+    getPathFirst(detalhe, [["cliente", "cpfCnpj"], ["cliente", "cpf_cnpj"]]) as string
+  );
+  const vendedor = safeText(
+    getPathFirst(detalhe, [["vendedor", "nome"]]) as string
+  );
   
   // Forma de pagamento completa (forma + meio)
   const formaPagto = safeText(safeGet(detalhe, ["pagamento", "formaPagamento", "nome"]));
@@ -87,23 +97,27 @@ export function transformPedidoDetalheToVendas(
     ""
   ) || "N/D";
 
-  const status = mapSituacao(detalhe.situacao);
+  const situacaoRaw = getFirst(detalhe, ["situacao", "situacaoCodigo"]);
+  const status = mapSituacao(situacaoRaw);
   const itens = detalhe.itens || [];
   
   if (itens.length === 0) {
     // Pedido sem itens: criar linha única com valor total
     debugWarn("vw_vendas", "itens", itens, "detalhe.itens");
     
+    const numeroPedido = getFirst(detalhe, ["numeroPedido", "numero_pedido", "numero"]);
+    const valorTotal = getFirst(detalhe, ["valorTotalPedido", "valor_total_pedido", "total", "valor"]);
+    
     return [
       {
         id: generateId(companyId, detalhe.id),
         company: { connect: { id: companyId } },
         dataHora,
-        produto: `Pedido #${detalhe.numeroPedido}`,
+        produto: `Pedido #${numeroPedido ?? detalhe.id}`,
         categoria: "N/D",
         quantidade: toPrismaDecimal(1),
-        valorUnitario: toPrismaDecimal(detalhe.valorTotalPedido),
-        valorTotal: toPrismaDecimal(detalhe.valorTotalPedido),
+        valorUnitario: toPrismaDecimal(valorTotal),
+        valorTotal: toPrismaDecimal(valorTotal),
         formaPagamento,
         vendedor,
         cliente,
@@ -115,17 +129,23 @@ export function transformPedidoDetalheToVendas(
   }
 
   return itens.map((item: TinyPedidoItem, idx: number) => {
-    // Suporte para snake_case e camelCase
-    const quantidade = toPrismaDecimal(item.quantidade, 0);
-    const valorUnitario = toPrismaDecimal(item.valorUnitario ?? item.valor_unitario, 0);
+    // Suporte para snake_case e camelCase usando helpers
+    const qtdRaw = getFirst(item, ["quantidade", "qtd"]);
+    const vlrUnitRaw = getFirst(item, ["valorUnitario", "valor_unitario"]);
+    
+    const quantidade = toPrismaDecimal(qtdRaw, 0);
+    const valorUnitario = toPrismaDecimal(vlrUnitRaw, 0);
     
     // Calcular valor total do item (quantidade × valorUnitario)
-    const qtdNum = parseFloat(toDecimal(item.quantidade) ?? "0");
-    const vlrNum = parseFloat(toDecimal(item.valorUnitario ?? item.valor_unitario) ?? "0");
+    const qtdNum = parseFloat(toDecimal(qtdRaw) ?? "0");
+    const vlrNum = parseFloat(toDecimal(vlrUnitRaw) ?? "0");
     const valorTotal = toPrismaDecimal(qtdNum * vlrNum, 0);
 
-    const produto = safeText(safeGet(item, ["produto", "descricao"]), "Produto não identificado");
-    const produtoId = item?.produto?.id;
+    const produto = safeText(
+      getPathFirst(item, [["produto", "descricao"], ["descricao"]]) as string,
+      "Produto não identificado"
+    );
+    const produtoId = getPathFirst<number>(item, [["produto", "id"]]);
     
     // Tentar buscar categoria do enrichment (se fornecido)
     let categoria = "-";
