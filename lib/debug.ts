@@ -11,9 +11,18 @@ export function sanitizePII(obj: unknown): unknown {
   if (!obj) return obj;
   if (typeof obj !== "object") return obj;
 
-  const sanitized = Array.isArray(obj) ? [...obj] : { ...obj };
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizePII(item));
+  }
+
+  // Handle objects - create typed copy
+  const source = obj as Record<string, unknown>;
+  const sanitized: Record<string, unknown> = { ...source };
 
   for (const key in sanitized) {
+    if (!Object.prototype.hasOwnProperty.call(sanitized, key)) continue;
+    
     const value = sanitized[key];
 
     // Mascarar CPF/CNPJ
@@ -23,6 +32,7 @@ export function sanitizePII(obj: unknown): unknown {
       typeof value === "string"
     ) {
       sanitized[key] = value.replace(/\d(?=\d{4})/g, "*");
+      continue;
     }
 
     // Mascarar email
@@ -31,6 +41,7 @@ export function sanitizePII(obj: unknown): unknown {
       if (domain) {
         sanitized[key] = `${user.substring(0, 2)}***@${domain}`;
       }
+      continue;
     }
 
     // Mascarar telefone
@@ -41,6 +52,7 @@ export function sanitizePII(obj: unknown): unknown {
       typeof value === "string"
     ) {
       sanitized[key] = value.replace(/\d(?=\d{4})/g, "*");
+      continue;
     }
 
     // Recursivo para objetos aninhados
