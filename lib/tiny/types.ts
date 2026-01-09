@@ -58,24 +58,45 @@ export type TinyPedidoItem = {
 
 export type TinyPedidoDetalhe = {
   id: number;
-  numero: string;
-  data_pedido: string;
-  situacao: string;
-  cliente: {
-    id: number;
-    nome: string;
+  numero?: string;
+  numeroPedido?: string;
+  data?: string;
+  data_pedido?: string;
+  dataPedido?: string;
+  dataPrevista?: string;
+  dataPrevisao?: string;
+  situacao: string | number;
+  cliente?: {
+    id?: number;
+    nome?: string;
     cpf_cnpj?: string;
+    cpfCnpj?: string;
   };
-  itens: TinyPedidoItem[];
+  itens?: TinyPedidoItem[];
   forma_pagamento?: string;
   observacoes?: string;
   vendedor?: {
-    id: number;
-    nome: string;
+    id?: number;
+    nome?: string;
+  } | null;
+  pagamento?: {
+    formaPagamento?: {
+      nome?: string;
+    };
+    meioPagamento?: {
+      nome?: string;
+    };
   };
-  valor: number;
+  ecommerce?: {
+    nome?: string;
+  };
+  deposito?: {
+    nome?: string;
+  };
+  valor?: number;
   desconto?: number;
   total?: number;
+  valorTotalPedido?: number;
 };
 
 // ============================================

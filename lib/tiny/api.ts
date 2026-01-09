@@ -128,12 +128,7 @@ export async function listAllPedidos(
   dataInicial: Date,
   dataFinal: Date,
   situacao?: string
-): Promise<TinyPedidoResumo[]> {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:127',message:'listAllPedidos entry',data:{dataInicial:formatDateForTiny(dataInicial),dataFinal:formatDateForTiny(dataFinal),situacao},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-  
-  const allPedidos: TinyPedidoResumo[] = [];
+): Promise<TinyPedidoResumo[]> {const allPedidos: TinyPedidoResumo[] = [];
   let pagina = 1;
   let hasMore = true;
 
@@ -148,13 +143,7 @@ export async function listAllPedidos(
         dataFinal: formatDateForTiny(dataFinal),
         situacao,
         pagina,
-      });
-
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:149',message:'listPedidos page response',data:{pagina,itensCount:response.itens?.length,totalPages:response.numero_paginas},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-
-    if (response.itens && response.itens.length > 0) {
+      });if (response.itens && response.itens.length > 0) {
       allPedidos.push(...response.itens);
       console.log(
         `[Tiny] Pedidos página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allPedidos.length})`
@@ -167,21 +156,9 @@ export async function listAllPedidos(
     } else {
       hasMore = false;
     }
-    } catch (error: unknown) {
-      // #region agent log
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error && error.stack ? error.stack.split('\n').slice(0,2).join('\n') : '';
-      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:172',message:'listPedidos page error',data:{pagina,errorMsg,errorStack},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-      throw error;
+    } catch (error: unknown) {throw error;
     }
-  }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:180',message:'listAllPedidos exit',data:{totalPedidos:allPedidos.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
-  console.log(`[Tiny] Total de pedidos encontrados: ${allPedidos.length}`);
+  }console.log(`[Tiny] Total de pedidos encontrados: ${allPedidos.length}`);
   return allPedidos;
 }
 
@@ -293,11 +270,7 @@ export async function listAllContasPagar(
   dataInicial: Date,
   dataFinal: Date,
   situacao?: string
-): Promise<TinyContaPagar[]> {
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:289',message:'listAllContasPagar ENTRY',data:{dataInicial:dataInicial.toISOString(),dataFinal:dataFinal.toISOString(),situacao,dataInicialFormatted:formatDateForTiny(dataInicial),dataFinalFormatted:formatDateForTiny(dataFinal)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-  // #endregion
-  const allContas: TinyContaPagar[] = [];
+): Promise<TinyContaPagar[]> {const allContas: TinyContaPagar[] = [];
   let pagina = 1;
   let hasMore = true;
 
@@ -311,12 +284,7 @@ export async function listAllContasPagar(
       dataFinal: formatDateForTiny(dataFinal),
       situacao,
       pagina,
-    });
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:310',message:'listContasPagar API RESPONSE',data:{pagina,hasItens:!!response.itens,itensLength:response.itens?.length||0,numero_paginas:response.numero_paginas,totalItens:response.total_itens,firstItemId:response.itens?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
-
-    if (response.itens && response.itens.length > 0) {
+    });if (response.itens && response.itens.length > 0) {
       allContas.push(...response.itens);
       console.log(
         `[Tiny] Contas pagar página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allContas.length})`

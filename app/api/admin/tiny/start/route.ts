@@ -31,12 +31,6 @@ export async function POST(request: NextRequest) {
   }
 
   const state = createOAuthState(companyId);
-  const url = buildAuthorizeUrl(state, scope);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/tiny/start/route.ts:34',message:'OAuth URL generated',data:{companyId,url,state},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F,G,H'})}).catch(()=>{});
-  // #endregion
-
-  return NextResponse.json({ url });
+  const url = buildAuthorizeUrl(state, scope);return NextResponse.json({ url });
 }
 

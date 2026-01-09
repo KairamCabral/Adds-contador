@@ -7,7 +7,8 @@ import { Prisma } from "@prisma/client";
 import {
   TinyPedidoResumo,
   TinyPedidoItem,
-  } from "./types";
+  TinyPedidoDetalhe,
+} from "./types";
 import {
   toDecimal,
   toPrismaDecimal,
@@ -60,15 +61,10 @@ const mapSituacao = (codigo: number | string): string => {
  */
 export function transformPedidoDetalheToVendas(
   companyId: string,
-  detalhe: unknown,
+  detalhe: TinyPedidoDetalhe,
   enrichData?: { produtos?: Map<number, unknown> }
 ): VwVendasInput[] {
-  // Extração segura de campos aninhados
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/transformers.ts:transformPedidoDetalheToVendas',message:'Debug datas disponíveis',data:{pedidoId:detalhe.id,detalheData:detalhe.data,detalheDataPedido:detalhe.dataPedido,detalheDataPrevisao:detalhe.dataPrevisao,allDateKeys:Object.keys(detalhe).filter(k=>k.toLowerCase().includes('data'))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3_DATA'})}).catch(()=>{});
-  // #endregion
-  
-  const dataHora = toDate(detalhe.dataPedido ?? detalhe.data) ?? new Date();
+  // Extração segura de campos aninhadosconst dataHora = toDate(detalhe.dataPedido ?? detalhe.data) ?? new Date();
   const cliente = safeText(safeGet(detalhe, ["cliente", "nome"]), "Cliente não identificado");
   const cnpjCliente = safeText(safeGet(detalhe, ["cliente", "cpfCnpj"]));
   const vendedor = safeText(safeGet(detalhe, ["vendedor", "nome"]));
@@ -91,13 +87,7 @@ export function transformPedidoDetalheToVendas(
   ) || "N/D";
 
   const status = mapSituacao(detalhe.situacao);
-  const itens = detalhe.itens || [];
-
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/transformers.ts:transformPedidoDetalheToVendas',message:'Transformando pedido',data:{pedidoId:detalhe.id,itensCount:itens.length,cliente,cnpjCliente,formaPagamento,caixa,status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-
-  if (itens.length === 0) {
+  const itens = detalhe.itens || [];if (itens.length === 0) {
     // Pedido sem itens: criar linha única com valor total
     debugWarn("vw_vendas", "itens", itens, "detalhe.itens");
     
@@ -131,33 +121,16 @@ export function transformPedidoDetalheToVendas(
     const valorTotal = toPrismaDecimal(qtdNum * vlrNum, 0);
 
     const produto = safeText(safeGet(item, ["produto", "descricao"]), "Produto não identificado");
-    const produtoId = item?.produto?.id;
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/transformers.ts:transformPedidoDetalheToVendas',message:'Debug categoria',data:{pedidoId:detalhe.id,itemIdx:idx,produtoId,produtoIdType:typeof produtoId,hasEnrichData:!!enrichData?.produtos,enrichDataSize:enrichData?.produtos?.size},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1_CATEGORIA'})}).catch(()=>{});
-    // #endregion
-    
-    // Tentar buscar categoria do enrichment (se fornecido)
+    const produtoId = item?.produto?.id;// Tentar buscar categoria do enrichment (se fornecido)
     let categoria = "-";
     if (enrichData?.produtos && produtoId) {
-      const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/transformers.ts:transformPedidoDetalheToVendas',message:'Produto enriquecido',data:{produtoId,found:!!produtoEnriquecido,categoria:produtoEnriquecido?.categoria},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2_CATEGORIA'})}).catch(()=>{});
-      // #endregion
-      
-      if (produtoEnriquecido?.categoria?.nome) {
+      const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));if (produtoEnriquecido?.categoria?.nome) {
         categoria = produtoEnriquecido.categoria.nome;
       }
     }
 
     // Debug para primeiro item
-    if (idx === 0) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/transformers.ts:transformPedidoDetalheToVendas',message:'Item transformado',data:{pedidoId:detalhe.id,itemIdx:idx,produto,categoria,quantidade:quantidade.toString(),valorUnitario:valorUnitario.toString(),valorTotal:valorTotal.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1_ENRICH'})}).catch(()=>{});
-      // #endregion
-      
-      debugMapping("vw_vendas", item, {
+    if (idx === 0) {debugMapping("vw_vendas", item, {
         produto,
         categoria,
         quantidade: quantidade.toString(),

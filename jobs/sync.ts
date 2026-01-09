@@ -13,6 +13,7 @@ import {
   getPedido,
   listAllEstoque,
 } from "@/lib/tiny/api";
+import type { TinyPedidoDetalhe } from "@/lib/tiny/types";
 import {
   transformPedidoResumoToVenda,
   transformPedidoDetalheToVendas,
@@ -201,7 +202,7 @@ const syncVendas = async (
 
     // FASE 1: Coletar IDs únicos de produtos para enrichment
     const produtoIds = new Set<number>();
-    const pedidosDetalhados: any[] = [];
+    const pedidosDetalhados: (TinyPedidoDetalhe | null)[] = [];
     
     for (const pedido of pedidos) {
       try {
@@ -248,13 +249,7 @@ const syncVendas = async (
       }
     }
 
-    console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncVendas',message:'Enrichment completo',data:{totalProdutosUnicos:produtoIds.size,produtosEnriquecidos:produtosEnriquecidos.size,amostraCategorias:Array.from(produtosEnriquecidos.values()).slice(0,3).map(p=>({sku:p.sku,categoria:p.categoria?.nome}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_ENRICH'})}).catch(()=>{});
-    // #endregion
-
-    // FASE 3: Processar cada pedido com enrichment
+    console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);// FASE 3: Processar cada pedido com enrichment
     for (let i = 0; i < pedidosDetalhados.length; i++) {
       const detalhe = pedidosDetalhados[i];
       const pedido = pedidos[i];
@@ -499,16 +494,7 @@ const syncContasPagar = async (
     console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
 
     for (const conta of contas) {
-      try {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:457',message:'BEFORE transform ContaPagar',data:{contaId:conta.id,contaKeys:Object.keys(conta)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        const contaView = transformContaPagarToView(companyId, conta);
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:459',message:'AFTER transform ContaPagar',data:{contaViewId:contaView.id,fornecedor:contaView.fornecedor,categoria:contaView.categoria,valor:contaView.valor?.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-
-        await prisma.vwContasPagar.upsert({
+      try {const contaView = transformContaPagarToView(companyId, conta);await prisma.vwContasPagar.upsert({
           where: { id: contaView.id as string },
           create: contaView,
           update: {
@@ -521,16 +507,8 @@ const syncContasPagar = async (
             status: contaView.status,
             formaPagto: contaView.formaPagto,
           },
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:475',message:'AFTER upsert ContaPagar SUCCESS',data:{contaId:conta.id,processed:processed+1},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        processed++;
-      } catch (err) {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:478',message:'ERROR processing ContaPagar',data:{contaId:conta.id,error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
-        // #endregion
-        const msg = err instanceof Error ? err.message : String(err);
+        });processed++;
+      } catch (err) {const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Conta ${conta.id}: ${msg}`);
       }
     }
@@ -552,18 +530,8 @@ const syncContasPagar = async (
       }
     }
 
-    await updateSyncCursor(companyId, module, now);
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:513',message:'syncContasPagar COMPLETE',data:{totalFetched:contas.length,processed,errorsCount:errors.length,firstError:errors[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C,D,E'})}).catch(()=>{});
-    // #endregion
-
-    return { module, processed, errors: errors.length ? errors : undefined };
-  } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:518',message:'syncContasPagar EXCEPTION',data:{error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
-    const msg = err instanceof Error ? err.message : String(err);
+    await updateSyncCursor(companyId, module, now);return { module, processed, errors: errors.length ? errors : undefined };
+  } catch (err) {const msg = err instanceof Error ? err.message : String(err);
     return { module, processed: 0, errors: [msg] };
   }
 };
@@ -607,13 +575,7 @@ const syncContasPagas = async (
       dataInicial,
       dataFinal,
       "pago"
-    );
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncContasPagas',message:'Contas pagas encontradas',data:{totalContas:contas.length,periodo:{inicio:dataInicial.toISOString(),fim:dataFinal.toISOString()},amostraContas:contas.slice(0,2).map(c=>({id:c.id,fornecedor:c.fornecedor?.nome,valor:c.valor}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_PAGAS'})}).catch(()=>{});
-    // #endregion
-
-    for (const conta of contas) {
+    );for (const conta of contas) {
       try {
         const contaView = transformContaPagaToView(companyId, conta);
         if (!contaView) continue;
@@ -694,13 +656,7 @@ const syncContasRecebidas = async (
       dataInicial,
       dataFinal,
       "pago"
-    );
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncContasRecebidas',message:'Contas recebidas encontradas',data:{totalContas:contas.length,periodo:{inicio:dataInicial.toISOString(),fim:dataFinal.toISOString()},amostraContas:contas.slice(0,2).map(c=>({id:c.id,cliente:c.cliente?.nome,valor:c.valor}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_RECEBIDAS'})}).catch(()=>{});
-    // #endregion
-
-    for (const conta of contas) {
+    );for (const conta of contas) {
       try {
         const contaView = transformContaRecebidaToView(companyId, conta);
         if (!contaView) continue;
