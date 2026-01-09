@@ -115,12 +115,13 @@ export function transformPedidoDetalheToVendas(
   }
 
   return itens.map((item: TinyPedidoItem, idx: number) => {
+    // Suporte para snake_case e camelCase
     const quantidade = toPrismaDecimal(item.quantidade, 0);
-    const valorUnitario = toPrismaDecimal(item.valorUnitario, 0);
+    const valorUnitario = toPrismaDecimal(item.valorUnitario ?? item.valor_unitario, 0);
     
     // Calcular valor total do item (quantidade × valorUnitario)
     const qtdNum = parseFloat(toDecimal(item.quantidade) ?? "0");
-    const vlrNum = parseFloat(toDecimal(item.valorUnitario) ?? "0");
+    const vlrNum = parseFloat(toDecimal(item.valorUnitario ?? item.valor_unitario) ?? "0");
     const valorTotal = toPrismaDecimal(qtdNum * vlrNum, 0);
 
     const produto = safeText(safeGet(item, ["produto", "descricao"]), "Produto não identificado");

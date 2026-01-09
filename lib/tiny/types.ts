@@ -41,10 +41,12 @@ export type TinyPedidoResumo = {
 
 export type TinyPedidoItem = {
   id: number;
-  descricao: string;
-  quantidade: number;
-  valor_unitario: number;
+  descricao?: string;
+  quantidade?: number;
+  valor_unitario?: number;
+  valorUnitario?: number;  // camelCase variant
   valor_total?: number;
+  valorTotal?: number;  // camelCase variant
   codigo?: string;
   unidade?: string;
   produto?: {
