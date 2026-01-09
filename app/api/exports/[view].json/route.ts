@@ -65,10 +65,10 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return new Response(buffer, {
+  return new Response(buffer.toString("utf-8"), {
     status: 200,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": `attachment; filename="${view}.json"`,
     },
   });
