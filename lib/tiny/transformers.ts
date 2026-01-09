@@ -114,7 +114,7 @@ export function transformPedidoDetalheToVendas(
     ];
   }
 
-  return itens.map((item: unknown, idx: number) => {
+  return itens.map((item: TinyPedidoItem, idx: number) => {
     const quantidade = toPrismaDecimal(item.quantidade, 0);
     const valorUnitario = toPrismaDecimal(item.valorUnitario, 0);
     
@@ -124,10 +124,14 @@ export function transformPedidoDetalheToVendas(
     const valorTotal = toPrismaDecimal(qtdNum * vlrNum, 0);
 
     const produto = safeText(safeGet(item, ["produto", "descricao"]), "Produto não identificado");
-    const produtoId = item?.produto?.id;// Tentar buscar categoria do enrichment (se fornecido)
+    const produtoId = item?.produto?.id;
+    
+    // Tentar buscar categoria do enrichment (se fornecido)
     let categoria = "-";
     if (enrichData?.produtos && produtoId) {
-      const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));if (produtoEnriquecido?.categoria?.nome) {
+      const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));
+      
+      if (produtoEnriquecido?.categoria?.nome) {
         categoria = produtoEnriquecido.categoria.nome;
       }
     }
