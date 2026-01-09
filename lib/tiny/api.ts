@@ -247,6 +247,22 @@ export async function getContaReceberDetalhe(
   return response;
 }
 
+/**
+ * Busca o detalhe de uma conta a pagar específica
+ * Endpoint V3: GET /contas-pagar/{id}
+ * Retorna dados completos incluindo categoria e formaPagamento
+ */
+export async function getContaPagarDetalhe(
+  connection: TinyConnection,
+  contaId: number
+): Promise<unknown> {
+  const response = await tinyRequest<unknown>({
+    connection,
+    path: `/contas-pagar/${contaId}`,
+  });
+  return response;
+}
+
 // ============================================
 // CONTAS A PAGAR
 // ============================================

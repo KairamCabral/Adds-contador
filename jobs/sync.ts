@@ -12,6 +12,7 @@ import {
   listAllContasPagar,
   getPedido,
   listAllEstoque,
+  getContaPagarDetalhe,
 } from "@/lib/tiny/api";
 import type { TinyPedidoDetalhe } from "@/lib/tiny/types";
 import {
@@ -549,10 +550,40 @@ const syncContasPagar = async (
       contas = contas.slice(0, 10);
     }
     
-    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
+    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas. Buscando detalhes para enriquecer categorias...`);
 
-    for (const conta of contas) {
-      try {const contaView = transformContaPagarToView(companyId, conta);await prisma.vwContasPagar.upsert({
+    const contasEnriquecidas: (unknown | null)[] = [];
+    for (let i = 0; i < contas.length; i++) {
+      const conta = contas[i];
+      const contaId = (conta as { id: number }).id;
+      
+      // Delay progressivo para evitar rate limit (300ms base + 50ms por conta)
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 300 + (i * 50)));
+      }
+      
+      try {
+        const detalheConta = await getContaPagarDetalhe(connection, contaId);
+        contasEnriquecidas.push(detalheConta);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Sync] Falha ao buscar detalhe da conta ${contaId}: ${msg.substring(0, 200)}`);
+        // Usar dados da lista como fallback
+        contasEnriquecidas.push(conta);
+      }
+    }
+
+    console.log(`[Sync ${module}] Detalhes obtidos. Transformando ${contasEnriquecidas.length} contas...`);
+
+    for (const contaEnriquecida of contasEnriquecidas) {
+      if (!contaEnriquecida) {
+        errors.push("Conta detalhe não encontrada para enriquecimento.");
+        continue;
+      }
+      try {
+        const contaView = transformContaPagarToView(companyId, contaEnriquecida);
+
+        await prisma.vwContasPagar.upsert({
           where: { id: contaView.id as string },
           create: contaView,
           update: {
@@ -565,22 +596,27 @@ const syncContasPagar = async (
             status: contaView.status,
             formaPagto: contaView.formaPagto,
           },
-        });processed++;
-      } catch (err) {const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Conta ${conta.id}: ${msg}`);
+        });
+        processed++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const contaId = (contaEnriquecida as { id?: number })?.id || 'unknown';
+        errors.push(`Conta ${contaId}: ${msg}`);
       }
     }
 
-    // Salvar payloads raw em batch (fora do loop principal)
-    if (contas.length > 0) {
+    // Salvar payloads enriquecidos raw em batch (fora do loop principal)
+    if (contasEnriquecidas.length > 0) {
       try {
         await prisma.rawPayload.createMany({
-          data: contas.map((conta) => ({
-            companyId,
-            module,
-            externalId: String(conta.id),
-            payload: conta as unknown as object,
-          })),
+          data: contasEnriquecidas
+            .filter((conta) => conta !== null)
+            .map((conta) => ({
+              companyId,
+              module,
+              externalId: String((conta as { id: number }).id),
+              payload: conta as unknown as object,
+            })),
           skipDuplicates: true,
         });
       } catch (err) {

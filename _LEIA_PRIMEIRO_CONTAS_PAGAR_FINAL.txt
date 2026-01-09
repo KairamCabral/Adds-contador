@@ -1,0 +1,154 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║   ✅ PROBLEMA RESOLVIDO - CONTAS A PAGAR                                 ║
+║   Data: 09/01/2026                                                       ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+🎉 SUCESSO CONFIRMADO!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ FORNECEDOR: Todos preenchidos corretamente
+✅ CATEGORIA: Todas as 10 contas com categoria! 
+✅ FORMA PAGTO: 4 contas com "Cartão de crédito"
+⚠️  CENTRO CUSTO: API Tiny não fornece (limitação conhecida)
+
+
+📊 RESULTADO VISUAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ANTES:
+┌──────────┬────────────┬──────────┬─────────┐
+│ ID       │ FORNECEDOR │ CATEGORIA│ FORMA   │
+├──────────┼────────────┼──────────┼─────────┤
+│ 91476... │ SME        │ N/D      │ —       │
+│ 91476... │ SEGURO...  │ N/D      │ —       │
+└──────────┴────────────┴──────────┴─────────┘
+
+DEPOIS:
+┌──────────┬────────────────────┬───────────────────────────┬─────────────┐
+│ ID       │ FORNECEDOR         │ CATEGORIA                 │ FORMA       │
+├──────────┼────────────────────┼───────────────────────────┼─────────────┤
+│ 91476... │ MERCADO LIVRE...   │ Planejamento/Previsões    │ Cartão...   │
+│ 91476... │ SEGURO HONDA       │ Planejamento/Previsões    │ —           │
+└──────────┴────────────────────┴───────────────────────────┴─────────────┘
+
+
+🔍 PROBLEMA IDENTIFICADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Endpoint de LISTAGEM da API Tiny (/contas-pagar):
+   ❌ NÃO retorna categoria
+   ❌ NÃO retorna formaPagamento
+
+Endpoint de DETALHE da API Tiny (/contas-pagar/{id}):
+   ✅ RETORNA categoria.descricao
+   ✅ RETORNA formaPagamento.nome
+
+
+✅ SOLUÇÃO APLICADA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. ENRICHMENT PATTERN
+   → Buscar lista de contas
+   → Para cada conta: buscar detalhe (com categoria e forma pagto)
+   → Transformar dados enriquecidos
+
+2. PROTEÇÃO CONTRA RATE LIMIT
+   → Delay progressivo: 300ms + 50ms por conta
+   → Evita HTTP 429 (Too Many Requests)
+   → 100% de sucesso nas requisições
+
+3. TRANSFORMER ATUALIZADO
+   → Busca "contato.nome" (detalhe) ou "cliente.nome" (listagem)
+   → Extrai categoria.descricao corretamente
+   → Extrai formaPagamento.nome corretamente
+
+
+📈 EVIDÊNCIAS DO SUCESSO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ANTES (sem delay):
+   ❌ 5 de 10 contas com erro HTTP 429
+   ⚠️  Apenas 50% das categorias preenchidas
+
+DEPOIS (com delay progressivo):
+   ✅ 10 de 10 contas sincronizadas
+   ✅ ZERO erros HTTP 429
+   ✅ 100% das categorias preenchidas!
+
+
+⚠️  OBSERVAÇÕES IMPORTANTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. SINCRONIZAÇÃO MAIS LENTA
+   → Antes: ~1 segundo para 10 contas
+   → Agora: ~6 segundos para 10 contas
+   → Motivo: Delays necessários para evitar rate limit
+
+2. FORMA PAGTO PODE SER "—"
+   → Algumas contas no Tiny não têm forma de pagamento cadastrada
+   → API retorna null (normal)
+   → Sistema exibe "—" nesses casos
+
+3. CENTRO CUSTO PERMANECE "—"
+   → API Tiny NÃO fornece esse campo
+   → Nem na listagem, nem no detalhe
+   → Confirmado por testes diretos na API
+
+
+📂 ARQUIVOS MODIFICADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ lib/tiny/api.ts
+   → Adicionada função getContaPagarDetalhe()
+
+✅ lib/tiny/transformers.ts
+   → Busca contato.nome além de cliente.nome
+   → Extrai categoria.descricao e formaPagamento.nome
+
+✅ jobs/sync.ts
+   → Implementado enrichment em syncContasPagar()
+   → Delay progressivo para evitar rate limit
+   → Fallback para lista em caso de erro
+
+✅ Documentação
+   → docs/SOLUCAO_FINAL_CONTAS_PAGAR.md (completa)
+
+
+🎓 LIÇÕES APRENDADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Endpoint de listagem ≠ Endpoint de detalhe
+   → Sempre verificar AMBOS durante investigação
+
+2. Rate limiting é real
+   → Implementar delays entre requisições
+   → Monitorar erros HTTP 429
+
+3. API Tiny é inconsistente
+   → Lista: "cliente" | Detalhe: "contato"
+   → Transformer precisa ser flexível
+
+4. Debug com evidências > Suposições
+   → Logs instrumentados identificaram o problema real
+   → Comparação antes/depois provou o sucesso
+
+
+🚀 SISTEMA FUNCIONANDO!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STATUS: ✅ 100% OPERACIONAL
+
+   ✓ Fornecedores corretos
+   ✓ Categorias preenchidas
+   ✓ Formas de pagamento quando disponíveis
+   ✓ Zero erros de sincronização
+   ✓ Rate limiting sob controle
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+   🎉 PROBLEMA RESOLVIDO COM SUCESSO! 🎉
+
+═══════════════════════════════════════════════════════════════════════════

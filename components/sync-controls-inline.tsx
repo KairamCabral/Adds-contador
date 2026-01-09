@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { showToast } from "./toast";
 
 type Props = {
   companyId: string;
@@ -9,6 +10,14 @@ type Props = {
     date: Date;
     status: string;
   };
+};
+
+type SyncStats = {
+  totalProcessed?: number;
+  moduleStats?: Array<{
+    module: string;
+    processed: number;
+  }>;
 };
 
 export function SyncControlsInline({ companyId, lastSync }: Props) {
@@ -21,11 +30,15 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return lastMonth.toISOString().slice(0, 7);
   });
+  const [syncStats, setSyncStats] = useState<SyncStats | null>(null);
+  const [progress, setProgress] = useState(0);
   const router = useRouter();
 
   // Polling para verificar se a sync terminou
   useEffect(() => {
     if (!loading) return;
+
+    let completedOnce = false;
 
     const checkSyncStatus = async () => {
       try {
@@ -33,11 +46,44 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         if (res.ok) {
           const data = await res.json();
           
+          // Atualizar stats se disponível
+          if (data.lastSync?.stats) {
+            setSyncStats(data.lastSync.stats);
+            
+            // Simular progresso baseado em stats
+            const total = data.lastSync.stats.totalProcessed || 0;
+            if (total > 0) {
+              setProgress(Math.min(90, Math.floor((total / 10) * 10)));
+            }
+          } else {
+            // Progresso incremental sem stats
+            setProgress((prev) => Math.min(85, prev + 5));
+          }
+          
           // Se a última sincronização não está mais RUNNING
           if (data.lastSync?.status && data.lastSync.status !== "RUNNING") {
-            setLoading(false);
-            // Atualizar a página após conclusão
-            router.refresh();
+            if (!completedOnce) {
+              completedOnce = true;
+              setProgress(100);
+              
+              // Determinar tipo de notificação
+              if (data.lastSync.status === "SUCCESS") {
+                const total = data.lastSync.stats?.totalProcessed || 0;
+                showToast.success(
+                  `✨ Sincronização concluída! ${total > 0 ? `${total} registros atualizados.` : ''}`
+                );
+              } else if (data.lastSync.status === "FAILED") {
+                showToast.error("❌ Falha na sincronização. Tente novamente.");
+              }
+              
+              // Aguardar animação e atualizar
+              setTimeout(() => {
+                setLoading(false);
+                setSyncStats(null);
+                setProgress(0);
+                router.refresh();
+              }, 1000);
+            }
           }
         }
       } catch (err) {
@@ -45,12 +91,15 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
       }
     };
 
-    // Verificar a cada 3 segundos
-    const interval = setInterval(checkSyncStatus, 3000);
+    // Verificar a cada 2 segundos para feedback mais rápido
+    const interval = setInterval(checkSyncStatus, 2000);
     
     // Timeout máximo de 13 minutos
     const timeout = setTimeout(() => {
       setLoading(false);
+      setSyncStats(null);
+      setProgress(0);
+      showToast.error("⏱️ Tempo limite excedido. Verifique o status da sincronização.");
       router.refresh();
     }, 780000);
 
@@ -63,6 +112,14 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
   const handleSync = async () => {
     setLoading(true);
     setShowDatePicker(false);
+    setProgress(10);
+    setSyncStats(null);
+
+    // Notificação inicial
+    const periodLabel = syncMode === "dev" 
+      ? "últimos 3 dias" 
+      : getMonthLabel();
+    showToast.info(`🔄 Iniciando sincronização: ${periodLabel}`);
 
     try {
       let endpoint = "/api/admin/sync";
@@ -103,10 +160,14 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         throw new Error(data.error || "Falha na sincronização");
       }
 
+      setProgress(20);
       // O polling vai cuidar do refresh quando terminar
     } catch (err) {
       console.error("Sync error:", err);
+      showToast.error("❌ Erro ao iniciar sincronização");
       setLoading(false);
+      setProgress(0);
+      setSyncStats(null);
     }
   };
 
@@ -119,6 +180,16 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
 
   return (
     <div className="relative flex items-center gap-2">
+      {/* Progress Bar - Aparece durante sincronização */}
+      {loading && (
+        <div className="absolute -bottom-1 left-0 right-0 h-0.5 overflow-hidden rounded-full bg-slate-800">
+          <div
+            className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
       {/* Status Indicator */}
       {lastSync && (
         <div 
@@ -129,6 +200,18 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
           title={lastSync.status === "SUCCESS" ? "Última sync concluída" : 
                  lastSync.status === "RUNNING" || loading ? "Sincronizando..." : "Erro na última sync"}
         />
+      )}
+
+      {/* Sync Stats Counter - Aparece durante sincronização */}
+      {loading && syncStats && syncStats.totalProcessed !== undefined && syncStats.totalProcessed > 0 && (
+        <div className="flex items-center gap-1.5 rounded bg-slate-800/80 px-2 py-1 backdrop-blur-sm">
+          <svg className="h-3 w-3 text-sky-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span className="text-xs font-medium text-slate-300">
+            {syncStats.totalProcessed}
+          </span>
+        </div>
       )}
 
       {/* Date Selector - Mais Visível e Intuitivo */}

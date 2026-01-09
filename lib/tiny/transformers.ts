@@ -583,8 +583,8 @@ export function transformContaPagarToView(
 ): VwContasPagarInput {
   const contaObj = conta as Record<string, unknown>;
   
-  // IMPORTANTE: API Tiny usa "cliente" mesmo para contas a pagar (não "fornecedor")
-  const fornecedorNome = safeGet(contaObj, ["cliente", "nome"]) || safeGet(contaObj, ["fornecedor", "nome"]);
+  // IMPORTANTE: API Tiny usa "cliente" na listagem e "contato" no detalhe
+  const fornecedorNome = safeGet(contaObj, ["contato", "nome"]) || safeGet(contaObj, ["cliente", "nome"]) || safeGet(contaObj, ["fornecedor", "nome"]);
   const fornecedor = typeof fornecedorNome === 'string' && fornecedorNome.trim() ? fornecedorNome.trim() : "N/D";
   
   // Categoria: Tentar extrair quando existe, senão "N/D"

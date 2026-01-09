@@ -46,6 +46,21 @@ export async function GET(request: NextRequest) {
     },
   });
 
+  // Última sync para polling
+  const lastSync = recentSyncs[0] || null;
+  
+  // Extrair stats se disponível
+  let syncStats = null;
+  if (lastSync?.stats) {
+    try {
+      syncStats = typeof lastSync.stats === 'string' 
+        ? JSON.parse(lastSync.stats) 
+        : lastSync.stats;
+    } catch (e) {
+      // Ignorar erro de parse
+    }
+  }
+
   return NextResponse.json({
     stuck: runningSyncs.map((r) => ({
       id: r.id,
@@ -54,6 +69,13 @@ export async function GET(request: NextRequest) {
       elapsedMinutes: Math.floor((Date.now() - r.startedAt.getTime()) / 60000),
     })),
     recent: recentSyncs,
+    lastSync: lastSync ? {
+      id: lastSync.id,
+      status: lastSync.status,
+      startedAt: lastSync.startedAt,
+      finishedAt: lastSync.finishedAt,
+      stats: syncStats,
+    } : null,
   });
 }
 
