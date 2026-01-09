@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 type Props = {
@@ -14,8 +14,8 @@ type Props = {
 export function SyncControlsInline({ companyId, lastSync }: Props) {
   const isDev = process.env.NODE_ENV === 'development';
   const [loading, setLoading] = useState(false);
-  const [showOptions, setShowOptions] = useState(false);
-  const [syncMode, setSyncMode] = useState<"quick" | "dev" | "month">("quick");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [syncMode, setSyncMode] = useState<"dev" | "month">("month");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -23,14 +23,48 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
   });
   const router = useRouter();
 
+  // Polling para verificar se a sync terminou
+  useEffect(() => {
+    if (!loading) return;
+
+    const checkSyncStatus = async () => {
+      try {
+        const res = await fetch(`/api/admin/sync/status?companyId=${companyId}`);
+        if (res.ok) {
+          const data = await res.json();
+          
+          // Se a última sincronização não está mais RUNNING
+          if (data.lastSync?.status && data.lastSync.status !== "RUNNING") {
+            setLoading(false);
+            // Atualizar a página após conclusão
+            router.refresh();
+          }
+        }
+      } catch (err) {
+        console.error("Error checking sync status:", err);
+      }
+    };
+
+    // Verificar a cada 3 segundos
+    const interval = setInterval(checkSyncStatus, 3000);
+    
+    // Timeout máximo de 13 minutos
+    const timeout = setTimeout(() => {
+      setLoading(false);
+      router.refresh();
+    }, 780000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [loading, companyId, router]);
+
   const handleSync = async () => {
     setLoading(true);
-    setShowOptions(false);
+    setShowDatePicker(false);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 780000);
-
       let endpoint = "/api/admin/sync";
       let body: Record<string, unknown> = { companyId };
 
@@ -62,109 +96,154 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Erro desconhecido" }));
         throw new Error(data.error || "Falha na sincronização");
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      router.refresh();
+      // O polling vai cuidar do refresh quando terminar
     } catch (err) {
       console.error("Sync error:", err);
-    } finally {
       setLoading(false);
     }
+  };
+
+  // Formatar nome do mês selecionado
+  const getMonthLabel = () => {
+    const [year, month] = selectedMonth.split("-");
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
   };
 
   return (
     <div className="relative flex items-center gap-2">
       {/* Status Indicator */}
       {lastSync && (
-        <div className={`h-2 w-2 rounded-full ${
-          lastSync.status === "SUCCESS" ? "bg-emerald-500" :
-          lastSync.status === "RUNNING" ? "animate-pulse bg-amber-500" : "bg-red-500"
-        }`} />
+        <div 
+          className={`h-2 w-2 rounded-full ${
+            lastSync.status === "SUCCESS" ? "bg-emerald-500" :
+            lastSync.status === "RUNNING" || loading ? "animate-pulse bg-amber-500" : "bg-red-500"
+          }`}
+          title={lastSync.status === "SUCCESS" ? "Última sync concluída" : 
+                 lastSync.status === "RUNNING" || loading ? "Sincronizando..." : "Erro na última sync"}
+        />
       )}
 
-      {/* Mode Selector */}
-      <div className="flex rounded border border-slate-700 overflow-hidden">
+      {/* Date Selector - Mais Visível e Intuitivo */}
+      <div className="relative">
         <button
-          onClick={() => setSyncMode("quick")}
+          onClick={() => setShowDatePicker(!showDatePicker)}
           disabled={loading}
-          className={`px-2 py-1 text-xs font-medium transition-colors ${
-            syncMode === "quick"
-              ? "bg-sky-600 text-white"
-              : "bg-slate-800 text-slate-400 hover:text-slate-300"
-          }`}
+          className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-600 hover:bg-slate-750 disabled:opacity-50"
         >
-          30d
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="capitalize">{getMonthLabel()}</span>
+          <svg className={`h-3 w-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </button>
-        
-        {isDev && (
-          <button
-            onClick={() => setSyncMode("dev")}
-            disabled={loading}
-            className={`px-2 py-1 text-xs font-medium transition-colors ${
-              syncMode === "dev"
-                ? "bg-amber-600 text-white"
-                : "bg-slate-800 text-slate-400 hover:text-slate-300"
-            }`}
-            title="Modo desenvolvimento - apenas 3 dias"
-          >
-            3d 🔧
-          </button>
+
+        {/* Dropdown melhorado */}
+        {showDatePicker && (
+          <div className="absolute right-0 top-full mt-2 z-10 min-w-[200px] rounded-lg border border-slate-700 bg-slate-900 shadow-xl">
+            <div className="p-3 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+                <span className="text-xs font-medium text-slate-300">Selecione o período</span>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="block text-[10px] uppercase tracking-wider text-slate-500">
+                  Mês/Ano
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    setSelectedMonth(e.target.value);
+                    setSyncMode("month");
+                  }}
+                  max={new Date().toISOString().slice(0, 7)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              {/* Atalhos rápidos */}
+              <div className="space-y-1">
+                <label className="block text-[10px] uppercase tracking-wider text-slate-500">
+                  Atalhos
+                </label>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    onClick={() => {
+                      const now = new Date();
+                      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                      setSelectedMonth(lastMonth.toISOString().slice(0, 7));
+                      setSyncMode("month");
+                    }}
+                    className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+                  >
+                    Mês passado
+                  </button>
+                  <button
+                    onClick={() => {
+                      const now = new Date();
+                      setSelectedMonth(now.toISOString().slice(0, 7));
+                      setSyncMode("month");
+                    }}
+                    className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+                  >
+                    Este mês
+                  </button>
+                </div>
+              </div>
+
+              {isDev && (
+                <div className="border-t border-slate-700 pt-2">
+                  <button
+                    onClick={() => {
+                      setSyncMode("dev");
+                      setShowDatePicker(false);
+                    }}
+                    className={`w-full rounded px-2 py-1.5 text-xs font-medium ${
+                      syncMode === "dev"
+                        ? "bg-amber-600 text-white"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    🔧 Dev: últimos 3 dias
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        
-        <button
-          onClick={() => {
-            setSyncMode("month");
-            setShowOptions(!showOptions);
-          }}
-          disabled={loading}
-          className={`px-2 py-1 text-xs font-medium transition-colors ${
-            syncMode === "month"
-              ? "bg-sky-600 text-white"
-              : "bg-slate-800 text-slate-400 hover:text-slate-300"
-          }`}
-        >
-          Mês
-        </button>
       </div>
 
-      {/* Month Picker Dropdown */}
-      {showOptions && syncMode === "month" && (
-        <div className="absolute right-0 top-full mt-1 z-10 rounded-lg border border-slate-700 bg-slate-900 p-2 shadow-xl">
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            max={new Date().toISOString().slice(0, 7)}
-            className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-white"
-          />
-        </div>
-      )}
-
-      {/* Sync Button */}
+      {/* Sync Button - Mais destacado */}
       <button
         onClick={handleSync}
         disabled={loading}
-        className="rounded bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
       >
         {loading ? (
-          <span className="flex items-center gap-1">
-            <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+          <>
+            <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            Sync...
-          </span>
+            <span>Sincronizando...</span>
+          </>
         ) : (
-          "Sincronizar"
+          <>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Sincronizar</span>
+          </>
         )}
       </button>
     </div>
