@@ -39,7 +39,18 @@ export async function POST(request: NextRequest) {const session = await auth();
     });return NextResponse.json({ ok: true, runIds: result.runIds });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;throw error;
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error('[Sync API] Error:', errorMessage);
+    
+    return NextResponse.json(
+      { 
+        ok: false, 
+        error: errorMessage,
+        stack: process.env.NODE_ENV === "production" ? undefined : errorStack 
+      },
+      { status: 500 }
+    );
   }
 }
 
