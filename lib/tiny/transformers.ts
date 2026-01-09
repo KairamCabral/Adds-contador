@@ -533,10 +533,22 @@ export function transformContaReceberToPosicao(
   const contaObj = conta as Record<string, unknown>;
   
   // Extração segura de campos aninhados
-  const cliente = safeText(safeGet(contaObj, ["cliente", "nome"]));
-  const cnpj = safeText(safeGet(contaObj, ["cliente", "cpfCnpj"]));
-  const categoria = safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria"));
-  const centroCusto = safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto"));
+  const clienteNome = safeGet(contaObj, ["cliente", "nome"]);
+  const cliente = typeof clienteNome === 'string' && clienteNome.trim() ? clienteNome.trim() : "N/D";
+  
+  const cpfCnpj = safeGet(contaObj, ["cliente", "cpfCnpj"]) || safeGet(contaObj, ["cliente", "cpf_cnpj"]);
+  const cnpj = typeof cpfCnpj === 'string' && cpfCnpj.trim() ? cpfCnpj.trim() : "N/D";
+  
+  // Categoria: API Tiny retorna objeto {id, descricao} quando existe, ou null quando não tem
+  // Endpoint relacionado: /categorias-receita-despesa
+  const categoriaObj = contaObj.categoria as Record<string, unknown> | null;
+  let categoria = "N/D";
+  if (categoriaObj && typeof categoriaObj === 'object' && categoriaObj.descricao) {
+    categoria = String(categoriaObj.descricao);
+  }
+  
+  // Centro de Custo: campo não existe na API Tiny para contas a receber
+  const centroCusto = null;
   
   const valor = toPrismaDecimal(contaObj.valor, 0);
   const idConta = contaObj.id as string | number;
@@ -545,11 +557,11 @@ export function transformContaReceberToPosicao(
     id: generateId(companyId, `${idConta}_${dataPosicao.toISOString().split("T")[0]}`),
     company: { connect: { id: companyId } },
     tituloId: BigInt(idConta as number),
-    cliente: cliente || "N/D",
-    cnpj: cnpj || "N/D",
-    categoria: categoria || "N/D",
-    centroCusto: centroCusto || null,
-    dataEmissao: toDate(getFirst(contaObj, ["dataEmissao", "data_emissao"])) ?? new Date(),
+    cliente,
+    cnpj,
+    categoria,
+    centroCusto,
+    dataEmissao: toDate(getFirst(contaObj, ["data", "dataEmissao", "data_emissao"])) ?? new Date(),
     dataVencimento: toDate(getFirst(contaObj, ["dataVencimento", "data_vencimento"])) ?? new Date(),
     valor,
     dataPosicao,
@@ -571,11 +583,44 @@ export function transformContaPagarToView(
 ): VwContasPagarInput {
   const contaObj = conta as Record<string, unknown>;
   
-  // Extração segura de campos aninhados
-  const fornecedor = safeText(safeGet(contaObj, ["fornecedor", "nome"]));
-  const categoria = safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria"));
-  const centroCusto = safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto"));
-  const formaPagto = safeText(safeGet(contaObj, ["formaPagamento", "nome"]) || safeGet(contaObj, "forma_pagamento"));
+  // IMPORTANTE: API Tiny usa "cliente" mesmo para contas a pagar (não "fornecedor")
+  const fornecedorNome = safeGet(contaObj, ["cliente", "nome"]) || safeGet(contaObj, ["fornecedor", "nome"]);
+  const fornecedor = typeof fornecedorNome === 'string' && fornecedorNome.trim() ? fornecedorNome.trim() : "N/D";
+  
+  // Categoria: Tentar extrair quando existe, senão "N/D"
+  const categoriaObj = contaObj.categoria as { id?: number; descricao?: string; nome?: string } | string | undefined;
+  let categoria = "N/D";
+  if (typeof categoriaObj === 'object' && categoriaObj) {
+    // Objeto: tentar descricao ou nome
+    categoria = String(categoriaObj.descricao || categoriaObj.nome || "N/D");
+  } else if (typeof categoriaObj === 'string' && categoriaObj.trim()) {
+    // String simples
+    categoria = categoriaObj.trim();
+  }
+  
+  // Centro de Custo: Tentar extrair quando existe
+  const centroCustoObj = contaObj.centroCusto || contaObj.centro_custo;
+  let centroCusto: string | null = null;
+  if (typeof centroCustoObj === 'object' && centroCustoObj) {
+    const custoNome = (centroCustoObj as { nome?: string }).nome;
+    if (typeof custoNome === 'string' && custoNome.trim()) {
+      centroCusto = custoNome.trim();
+    }
+  } else if (typeof centroCustoObj === 'string' && centroCustoObj.trim()) {
+    centroCusto = centroCustoObj.trim();
+  }
+  
+  // Forma de Pagamento: Tentar extrair quando existe
+  const formaPagtoObj = contaObj.formaPagamento || contaObj.forma_pagamento;
+  let formaPagto: string | null = null;
+  if (typeof formaPagtoObj === 'object' && formaPagtoObj) {
+    const pagtoNome = (formaPagtoObj as { nome?: string }).nome;
+    if (typeof pagtoNome === 'string' && pagtoNome.trim()) {
+      formaPagto = pagtoNome.trim();
+    }
+  } else if (typeof formaPagtoObj === 'string' && formaPagtoObj.trim()) {
+    formaPagto = formaPagtoObj.trim();
+  }
   
   const valor = toPrismaDecimal(contaObj.valor, 0);
   const idConta = contaObj.id as string | number;
@@ -584,14 +629,14 @@ export function transformContaPagarToView(
     id: generateId(companyId, idConta),
     company: { connect: { id: companyId } },
     tituloId: BigInt(idConta as number),
-    fornecedor: fornecedor || "N/D",
-    categoria: categoria || "N/D",
-    centroCusto: centroCusto || null,
-    dataEmissao: toDate(getFirst(contaObj, ["dataEmissao", "data_emissao"])) ?? new Date(),
+    fornecedor,
+    categoria,
+    centroCusto,
+    dataEmissao: toDate(getFirst(contaObj, ["data", "dataEmissao", "data_emissao"])) ?? new Date(),
     dataVencimento: toDate(getFirst(contaObj, ["dataVencimento", "data_vencimento"])) ?? new Date(),
     valor,
     status: safeText(contaObj.situacao) || "N/D",
-    formaPagto: formaPagto || null,
+    formaPagto,
   };
 }
 
@@ -620,16 +665,47 @@ export function transformContaPagaToView(
     ?? toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) 
     ?? new Date();
 
+  // IMPORTANTE: API Tiny usa "cliente" mesmo para contas a pagar
+  const fornecedorNome = safeGet(contaObj, ["cliente", "nome"]) 
+    || safeGet(contaObj, ["fornecedor", "nome"]) 
+    || safeGet(contaObj, ["pessoa", "nome"]);
+  const fornecedor = typeof fornecedorNome === 'string' && fornecedorNome.trim() ? fornecedorNome.trim() : "N/D";
+  
+  // Categoria
+  const categoriaObj = contaObj.categoria;
+  let categoria: string | null = null;
+  if (typeof categoriaObj === 'object' && categoriaObj) {
+    const catNome = (categoriaObj as { nome?: string; descricao?: string }).nome 
+      || (categoriaObj as { descricao?: string }).descricao;
+    if (typeof catNome === 'string' && catNome.trim()) {
+      categoria = catNome.trim();
+    }
+  } else if (typeof categoriaObj === 'string' && categoriaObj.trim()) {
+    categoria = categoriaObj.trim();
+  }
+  
+  // Centro de Custo
+  const centroCustoObj = contaObj.centroCusto || contaObj.centro_custo;
+  let centroCusto: string | null = null;
+  if (typeof centroCustoObj === 'object' && centroCustoObj) {
+    const custoNome = (centroCustoObj as { nome?: string }).nome;
+    if (typeof custoNome === 'string' && custoNome.trim()) {
+      centroCusto = custoNome.trim();
+    }
+  } else if (typeof centroCustoObj === 'string' && centroCustoObj.trim()) {
+    centroCusto = centroCustoObj.trim();
+  }
+
   const idConta = contaObj.id as string | number;
 
   return {
     id: generateId(companyId, `pago_${idConta}`),
     company: { connect: { id: companyId } },
     tituloId: BigInt(idConta as number),
-    fornecedor: safeText(safeGet(contaObj, ["fornecedor", "nome"]) || safeGet(contaObj, ["pessoa", "nome"])),
-    categoria: safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria")),
-    centroCusto: safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto")),
-    dataEmissao: toDate(getFirst(contaObj, ["data_emissao", "dataEmissao"])) ?? new Date(),
+    fornecedor,
+    categoria,
+    centroCusto,
+    dataEmissao: toDate(getFirst(contaObj, ["data", "data_emissao", "dataEmissao"])) ?? new Date(),
     dataVencimento: toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) ?? new Date(),
     dataPagamento,
     valorTitulo: toPrismaDecimal(contaObj.valor, 0),

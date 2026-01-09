@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Portal do Contador",
   description: "Relatórios e sincronização Tiny ERP",
+  icons: {
+    icon: "/Logo-cor-adds.webp",
+  },
 };
 
 export default function RootLayout({

@@ -233,6 +233,20 @@ export async function listAllContasReceber(
   return allContas;
 }
 
+/**
+ * Busca detalhe de uma conta a receber (inclui categoria e mais campos)
+ */
+export async function getContaReceberDetalhe(
+  connection: TinyConnection,
+  contaId: number
+): Promise<unknown> {
+  const response = await tinyRequest<unknown>({
+    connection,
+    path: `/contas-receber/${contaId}`,
+  });
+  return response;
+}
+
 // ============================================
 // CONTAS A PAGAR
 // ============================================

@@ -162,24 +162,66 @@ export type TinyContaReceber = {
 export type TinyContaPagar = {
   id: number;
   numero_documento?: string;
-  fornecedor: {
+  numeroDocumento?: string;
+  serieDocumento?: string;
+  // IMPORTANTE: API Tiny usa "cliente" mesmo para contas a pagar
+  cliente?: {
+    id: number;
+    nome: string;
+    cpfCnpj?: string;
+    cpf_cnpj?: string;
+    [key: string]: unknown;
+  };
+  // Mantido para compatibilidade se algum endpoint usar "fornecedor"
+  fornecedor?: {
     id: number;
     nome: string;
     cpf_cnpj?: string;
+    [key: string]: unknown;
   };
-  data_emissao: string;
-  data_vencimento: string;
+  data?: string; // Campo principal de data de emissão
+  data_emissao?: string;
+  dataEmissao?: string;
+  data_vencimento?: string;
+  dataVencimento?: string;
   valor: number;
   valor_pago?: number;
-  situacao: string;
-  categoria?: string;
-  centro_custo?: string;
-  forma_pagamento?: string;
+  situacao: string; // "aberto", "pago", etc.
+  categoria?: string | {
+    id?: number;
+    nome?: string;
+    descricao?: string;
+    [key: string]: unknown;
+  };
+  centro_custo?: string | {
+    id?: number;
+    nome?: string;
+    [key: string]: unknown;
+  };
+  centroCusto?: string | {
+    id?: number;
+    nome?: string;
+    [key: string]: unknown;
+  };
+  forma_pagamento?: string | {
+    id?: number;
+    nome?: string;
+    [key: string]: unknown;
+  };
+  formaPagamento?: string | {
+    id?: number;
+    nome?: string;
+    [key: string]: unknown;
+  };
+  historico?: string;
   observacoes?: string;
   data_pagamento?: string;
+  dataPagamento?: string;
   desconto?: number;
   juros?: number;
   multa?: number;
+  marcadores?: unknown[];
+  numeroBanco?: string | null;
   conta_bancaria?: string;
 };
 

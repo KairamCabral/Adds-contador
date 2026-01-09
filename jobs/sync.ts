@@ -411,7 +411,36 @@ const syncContasReceberPosicao = async (
       contas = contas.slice(0, 10);
     }
     
-    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);for (const conta of contas) {
+    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
+
+    // Enriquecer contas com detalhe (para pegar categoria)
+    console.log(`[Sync ${module}] Buscando detalhes para enriquecer categorias...`);
+    const contasEnriquecidas = [];
+    for (let i = 0; i < contas.length; i++) {
+      const conta = contas[i];
+      try {
+        // Buscar detalhe que inclui categoria
+        const { getContaReceberDetalhe } = await import("@/lib/tiny/api");
+        const detalhe = await getContaReceberDetalhe(connection, conta.id as number);
+        contasEnriquecidas.push(detalhe);
+        
+        // Log progresso a cada 10
+        if ((i + 1) % 10 === 0 || i === contas.length - 1) {
+          console.log(`[Sync ${module}] Enriquecidas ${i + 1}/${contas.length} contas`);
+        }
+        
+        // Pequeno delay para evitar rate limit
+        if (i < contas.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        console.warn(`[Sync ${module}] Erro ao buscar detalhe da conta ${conta.id}:`, error);
+        // Se falhar, usa a conta original (sem categoria)
+        contasEnriquecidas.push(conta);
+      }
+    }
+
+    for (const conta of contasEnriquecidas) {
       try {
         const posicao = transformContaReceberToPosicao(
           companyId,
@@ -436,7 +465,9 @@ const syncContasReceberPosicao = async (
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Conta ${conta.id}: ${msg}`);
+        const contaObj = conta as Record<string, unknown>;
+        const contaId = contaObj?.id || 'desconhecido';
+        errors.push(`Conta ${contaId}: ${msg}`);
       }
     }
 
@@ -613,6 +644,8 @@ const syncContasPagas = async (
     
     console.log(`[Sync ${module}] Processando ${contas.length} contas pagas`);
     
+    const titulosProcessados: bigint[] = [];
+    
     for (const conta of contas) {
       try {
         const contaView = transformContaPagaToView(companyId, conta);
@@ -639,10 +672,30 @@ const syncContasPagas = async (
             status: contaView.status,
           },
         });
+        
+        titulosProcessados.push(contaView.tituloId);
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Conta ${conta.id}: ${msg}`);
+      }
+    }
+
+    // LIMPEZA: Remover de vw_contas_pagar as contas que foram pagas
+    if (titulosProcessados.length > 0) {
+      try {
+        const deleted = await prisma.vwContasPagar.deleteMany({
+          where: {
+            companyId,
+            tituloId: { in: titulosProcessados },
+          },
+        });
+        
+        if (deleted.count > 0) {
+          console.log(`[Sync ${module}] 🧹 Removidas ${deleted.count} contas pagas de vw_contas_pagar`);
+        }
+      } catch (err) {
+        console.warn(`[Sync ${module}] Aviso: Erro ao limpar contas pagas de vw_contas_pagar:`, err);
       }
     }
 
@@ -705,6 +758,8 @@ const syncContasRecebidas = async (
     
     console.log(`[Sync ${module}] Processando ${contas.length} contas recebidas`);
     
+    const titulosProcessados: bigint[] = [];
+    
     for (const conta of contas) {
       try {
         const contaView = transformContaRecebidaToView(companyId, conta);
@@ -734,10 +789,30 @@ const syncContasRecebidas = async (
             status: contaView.status,
           },
         });
+        
+        titulosProcessados.push(contaView.tituloId);
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Conta ${conta.id}: ${msg}`);
+      }
+    }
+
+    // LIMPEZA: Remover de vw_contas_receber_posicao as contas que foram recebidas
+    if (titulosProcessados.length > 0) {
+      try {
+        const deleted = await prisma.vwContasReceberPosicao.deleteMany({
+          where: {
+            companyId,
+            tituloId: { in: titulosProcessados },
+          },
+        });
+        
+        if (deleted.count > 0) {
+          console.log(`[Sync ${module}] 🧹 Removidas ${deleted.count} contas recebidas de vw_contas_receber_posicao`);
+        }
+      } catch (err) {
+        console.warn(`[Sync ${module}] Aviso: Erro ao limpar contas recebidas de vw_contas_receber_posicao:`, err);
       }
     }
 

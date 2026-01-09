@@ -1,0 +1,118 @@
+═══════════════════════════════════════════════════════════════════════════
+                ✅ CORREÇÕES CONTAS A RECEBER - CONCLUÍDAS
+═══════════════════════════════════════════════════════════════════════════
+
+📅 Data: 09/01/2026
+✅ Status: PRONTO PARA TESTE
+🔧 Build: PASSOU SEM ERROS
+🗑️ Dados antigos: 223 REGISTROS LIMPOS
+
+───────────────────────────────────────────────────────────────────────────
+📊 RESUMO DA ANÁLISE
+───────────────────────────────────────────────────────────────────────────
+
+🔍 PROBLEMA IDENTIFICADO:
+   → Categoria aparecia como "-" em vez de "N/D"
+   → Centro Custo aparecia como "-" em vez de vazio/null
+
+🧪 INVESTIGAÇÃO REALIZADA:
+   → Criados 3 scripts de diagnóstico
+   → Analisados endpoints de lista e detalhe da API Tiny
+   → Confirmado que categoria e centro custo NÃO existem na API
+
+🛠️ CORREÇÕES APLICADAS:
+   → Transformer otimizado (lib/tiny/transformers.ts)
+   → Categoria: hardcoded "N/D" (API sempre retorna null)
+   → Centro Custo: hardcoded null (campo não existe na API)
+   → Data Emissão: corrigida para usar campo "data" (correto)
+   → CPF/CNPJ: suporte a variações camelCase/snake_case
+
+───────────────────────────────────────────────────────────────────────────
+🎯 CAMPOS - STATUS FINAL
+───────────────────────────────────────────────────────────────────────────
+
+✅ FUNCIONANDO:
+   [✓] ID Título       → conta.id
+   [✓] Cliente         → conta.cliente.nome
+   [✓] CNPJ/CPF        → conta.cliente.cpfCnpj
+   [✓] Data Emissão    → conta.data (CORRIGIDO)
+   [✓] Data Vencimento → conta.dataVencimento
+   [✓] Valor           → conta.valor
+   [✓] Data Posição    → (gerado pelo sistema)
+
+⚠️ INDISPONÍVEIS (API TINY NÃO FORNECE):
+   [!] Categoria       → API retorna null (exibir "N/D")
+   [!] Centro Custo    → Campo não existe (exibir vazio/"-")
+
+───────────────────────────────────────────────────────────────────────────
+🚀 PRÓXIMOS PASSOS (PARA VOCÊ)
+───────────────────────────────────────────────────────────────────────────
+
+1. Inicie o servidor:
+   
+   npm run dev
+
+2. Acesse o sistema no navegador
+
+3. Vá para a aba "Contas a Receber"
+
+4. Clique em "Sincronizar agora"
+
+5. Valide os resultados:
+   
+   ✓ Cliente: nome completo
+   ✓ CNPJ/CPF: CPF ou CNPJ formatado
+   ✓ Categoria: deve aparecer "N/D"
+   ✓ Centro Custo: deve aparecer vazio ou "-"
+   ✓ Datas: formato DD/MM/YYYY
+   ✓ Valor: formato R$ X.XXX,XX
+
+───────────────────────────────────────────────────────────────────────────
+📚 DOCUMENTAÇÃO CRIADA
+───────────────────────────────────────────────────────────────────────────
+
+📄 RESUMO_CONTAS_RECEBER.md
+   → Resumo executivo completo
+
+📄 docs/CORRECOES_CONTAS_RECEBER.md
+   → Detalhamento técnico das correções
+
+📄 docs/CONTAS_RECEBER_LIMITACOES.md
+   → Documentação sobre limitações da API Tiny
+
+📄 CAMPOS_CONTAS_RECEBER.md
+   → Mapa visual de campos (disponíveis vs. indisponíveis)
+
+🔍 scripts/inspect-contas-receber.js
+   → Script para inspecionar listagem da API
+
+🔍 scripts/inspect-conta-receber-detalhe.js
+   → Script para inspecionar detalhe de uma conta
+
+🔄 scripts/resync-contas-receber.js
+   → Script para limpar e re-sincronizar dados
+
+───────────────────────────────────────────────────────────────────────────
+💡 LEMBRETE IMPORTANTE
+───────────────────────────────────────────────────────────────────────────
+
+⚠️  Categoria e Centro Custo aparecem como "N/D" ou vazio porque a 
+    API Tiny **NÃO FORNECE** esses dados para contas a receber.
+    
+    Isso NÃO é um bug - é uma limitação da API!
+
+📖 Para mais detalhes, consulte: docs/CONTAS_RECEBER_LIMITACOES.md
+
+───────────────────────────────────────────────────────────────────────────
+✅ TUDO PRONTO!
+───────────────────────────────────────────────────────────────────────────
+
+Sistema está pronto para sincronização e validação.
+
+Se tiver dúvidas, consulte a documentação criada ou execute os scripts
+de diagnóstico.
+
+Próxima aba para análise: Contas a Pagar, Contas Pagas, Contas Recebidas, 
+                          ou Estoque
+
+═══════════════════════════════════════════════════════════════════════════

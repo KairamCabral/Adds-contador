@@ -38,13 +38,13 @@ export function LoginForm() {
   return (
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-slate-200">
+        <label className="block text-sm font-medium text-slate-700">
           Email
         </label>
         <input
           type="email"
           required
-          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-0 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-0 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="email@empresa.com"
@@ -52,13 +52,13 @@ export function LoginForm() {
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-slate-200">
+        <label className="block text-sm font-medium text-slate-700">
           Senha
         </label>
         <input
           type="password"
           required
-          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-0 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none ring-0 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="********"
@@ -66,7 +66,7 @@ export function LoginForm() {
       </div>
 
       {error ? (
-        <p className="text-sm text-red-400" role="alert">
+        <p className="text-sm text-red-600" role="alert">
           {error}
         </p>
       ) : null}
@@ -74,7 +74,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="flex w-full items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
+        className="flex w-full items-center justify-center rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {loading ? "Entrando..." : "Entrar"}
       </button>

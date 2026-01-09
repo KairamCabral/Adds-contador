@@ -153,6 +153,13 @@ export default async function ReportPage({
             <div className="flex items-center justify-between gap-6 py-3">
               {/* Info do Relatório */}
               <div className="flex items-center gap-6">
+                {/* Logo */}
+                <img 
+                  src="/Logo-cor-adds.webp" 
+                  alt="ADDS" 
+                  className="h-8 w-auto"
+                />
+                
                 <div>
                   <h1 className="text-lg font-bold text-white">{config.title}</h1>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">

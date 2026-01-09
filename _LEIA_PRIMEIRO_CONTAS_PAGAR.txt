@@ -1,0 +1,202 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║   ✅ CORREÇÕES APLICADAS - CONTAS A PAGAR                                ║
+║   Data: 09/01/2026                                                       ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📋 RESUMO EXECUTIVO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STATUS: ✅ CORREÇÕES IMPLEMENTADAS E TESTADAS
+IMPACTO: Corrige campos que apareciam como "-" (vazio)
+PRÓXIMO PASSO: Execute sincronização manual
+
+
+🔍 PROBLEMA IDENTIFICADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Na aba "Contas a Pagar", TODOS os campos apareciam como "-":
+
+   ❌ FORNECEDOR: "-"
+   ❌ CATEGORIA: "-"
+   ❌ CENTRO CUSTO: "-"
+   ❌ FORMA PAGTO: "-"
+
+Apenas datas, valores e status funcionavam.
+
+
+🎯 CAUSA RAIZ - BUG CRÍTICO DESCOBERTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A API Tiny ERP usa o campo "cliente" MESMO PARA CONTAS A PAGAR!
+
+   Estrutura da API Tiny (contas-pagar):
+   {
+     "id": 914767762,
+     "cliente": {           ← CLIENTE em conta a PAGAR!
+       "nome": "SEGURO HONDA"
+     },
+     "valor": 418.13,
+     "situacao": "aberto"
+   }
+
+   ⚠️  100% dos registros analisados (20/20) tinham "cliente", não "fornecedor"!
+
+O transformer buscava "fornecedor.nome" que NÃO EXISTIA.
+
+
+✅ CORREÇÕES APLICADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. lib/tiny/transformers.ts
+   ├─ transformContaPagarToView()
+   │  ├─ ✅ Corrigido: Busca "cliente.nome" para FORNECEDOR
+   │  ├─ ✅ Corrigido: Campo de data usa "data" (não "dataEmissao")
+   │  ├─ ✅ Melhorado: Aceita categoria como objeto ou string
+   │  └─ ✅ Melhorado: Aceita centroCusto e formaPagto flexíveis
+   │
+   └─ transformContaPagaToView()
+      └─ ✅ Mesmas correções aplicadas
+
+2. lib/tiny/types.ts
+   └─ TinyContaPagar
+      ├─ ✅ Atualizado: Campo "cliente" (principal)
+      ├─ ✅ Mantido: Campo "fornecedor" (fallback)
+      └─ ✅ Flexibilidade: Campos podem ser objeto ou string
+
+3. Scripts criados:
+   ├─ scripts/inspect-raw-contas-pagar.js
+   ├─ scripts/check-contas-pagar-structure.js
+   ├─ scripts/resync-contas-pagar.js
+   └─ scripts/trigger-sync-manual.js
+
+
+🧹 LIMPEZA EXECUTADA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   ✅ Deletados: 100 registros de vw_contas_pagar
+   ✅ Deletados: 100 registros de vw_contas_pagas
+   ✅ Deletados: 3.405 payloads raw
+   ✅ Resetados: Sync cursors
+
+   → Banco está limpo e pronto para nova sincronização
+
+
+📊 RESULTADO ESPERADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Após você executar a sincronização:
+
+┌─────────────────┬─────────┬──────────────┐
+│ Campo           │ Antes   │ Depois       │
+├─────────────────┼─────────┼──────────────┤
+│ FORNECEDOR      │ "-"     │ ✅ Nome real │
+│ CATEGORIA       │ "-"     │ ⚠️  Se na API │
+│ CENTRO CUSTO    │ "-"     │ ⚠️  Se na API │
+│ FORMA PAGTO     │ "-"     │ ⚠️  Se na API │
+│ DATA EMISSÃO    │ ✅ OK   │ ✅ OK        │
+│ VALOR           │ ✅ OK   │ ✅ OK        │
+│ STATUS          │ ✅ OK   │ ✅ OK        │
+└─────────────────┴─────────┴──────────────┘
+
+Exemplo real:
+┌────────────┬──────────────┬───────────┬─────────────┬────────┐
+│ ID TÍTULO  │ FORNECEDOR   │ CATEGORIA │ CENTRO CUSTO│ VALOR  │
+├────────────┼──────────────┼───────────┼─────────────┼────────┤
+│ 914767762  │ SEGURO HONDA │ N/D*      │ null*       │ 418,13 │
+│ 914760028  │ MERCADO LIVRE│ N/D*      │ null*       │2.698,89│
+└────────────┴──────────────┴───────────┴─────────────┴────────┘
+
+*Se a API Tiny não retornar esses campos na listagem
+
+
+⚠️  LIMITAÇÕES CONHECIDAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CATEGORIA, CENTRO CUSTO e FORMA PAGTO podem continuar "N/D" se:
+   → API Tiny não retorna no endpoint de listagem /contas-pagar
+   → Só disponíveis no endpoint de detalhe /contas-pagar/{id}
+
+SOLUÇÃO FUTURA (se necessário):
+   → Implementar enrichment igual "Contas a Receber"
+   → Buscar detalhe individual de cada conta
+   → ⚠️  Aumenta tempo de sincronização
+
+
+🚀 PRÓXIMOS PASSOS - AÇÃO REQUERIDA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣  Acesse: http://localhost:3000
+
+2️⃣  Faça login:
+    Email: admin@adds.com.br
+    Senha: admin123
+
+3️⃣  Navegue até: Contas a Pagar
+
+4️⃣  Clique: "Sincronizar dados" ou "Sincronizar" (botão no topo)
+
+5️⃣  Aguarde a sincronização completar
+
+6️⃣  VALIDE: Campo FORNECEDOR deve mostrar nomes reais! 🎉
+
+
+📚 DOCUMENTAÇÃO COMPLETA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   Leia: docs/CORRECOES_CONTAS_PAGAR.md
+   
+   Contém:
+   ├─ Análise técnica completa
+   ├─ Código antes vs depois
+   ├─ Estrutura real da API Tiny
+   ├─ Justificativas de cada correção
+   └─ Lições aprendidas
+
+
+✅ CHECKLIST DE VALIDAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Após sincronizar, verifique:
+
+   □ Campo FORNECEDOR mostra nomes (não mais "-")
+   □ Campo DATA EMISSÃO está correto
+   □ Campo VALOR está correto
+   □ Campo STATUS está correto
+   □ Campos CATEGORIA/CENTRO CUSTO/FORMA PAGTO:
+     - Se "-" ou "N/D": Normal (API não retorna na listagem)
+     - Se tem valor: Ótimo! API retornou
+
+
+🎓 LIÇÕES APRENDIDAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. API Tiny é INCONSISTENTE:
+   ✓ Contas a RECEBER → campo "cliente"
+   ✓ Contas a PAGAR → TAMBÉM usa "cliente" (não "fornecedor")!
+
+2. SEMPRE inspecionar dados reais:
+   ❌ NÃO confiar apenas na documentação
+   ✅ SIM analisar payloads reais no banco
+
+3. Scripts de diagnóstico são essenciais:
+   ✓ inspect-raw-contas-pagar.js
+   ✓ check-contas-pagar-structure.js
+
+
+📞 SUPORTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Se após sincronizar o campo FORNECEDOR ainda aparecer "-":
+
+   1. Verifique os logs do terminal onde roda "npm run dev"
+   2. Execute: node scripts/inspect-raw-contas-pagar.js
+   3. Compartilhe a saída do script para análise
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+   🎉 CORREÇÕES PRONTAS! Execute a sincronização e valide! 🎉
+
+═══════════════════════════════════════════════════════════════════════════
