@@ -84,18 +84,25 @@ export async function getProduto(
       path: `/produtos/${produtoId}`,
     });
 
+    // Type assertion - response da API Tiny
+    const produtoData = response as Record<string, unknown>;
+
     const produto: CachedProduto = {
       id: produtoId,
-      sku: response.codigo || response.sku || "",
-      descricao: response.descricao || response.nome || "",
-      categoria: response.categoria?.id
+      sku: String(produtoData.codigo || produtoData.sku || ""),
+      descricao: String(produtoData.descricao || produtoData.nome || ""),
+      categoria: 
+        produtoData.categoria && 
+        typeof produtoData.categoria === 'object' && 
+        produtoData.categoria !== null &&
+        'id' in produtoData.categoria
         ? {
-            id: response.categoria.id,
-            nome: response.categoria.nome || "Sem categoria",
+            id: Number((produtoData.categoria as Record<string, unknown>).id),
+            nome: String((produtoData.categoria as Record<string, unknown>).nome || "Sem categoria"),
           }
         : undefined,
-      unidade: response.unidade,
-      preco: response.preco,
+      unidade: produtoData.unidade ? String(produtoData.unidade) : undefined,
+      preco: produtoData.preco ? Number(produtoData.preco) : undefined,
     };
 
     // Salvar no cache
@@ -128,11 +135,14 @@ export async function getPessoa(
       path: `/contatos/${pessoaId}`,
     });
 
+    // Type assertion - response da API Tiny
+    const pessoaData = response as Record<string, unknown>;
+
     const pessoa: CachedPessoa = {
       id: pessoaId,
-      nome: response.nome || "",
-      cpfCnpj: response.cpf_cnpj || response.cpfCnpj || undefined,
-      tipo: response.tipo_pessoa || response.tipoPessoa || "F",
+      nome: String(pessoaData.nome || ""),
+      cpfCnpj: pessoaData.cpf_cnpj || pessoaData.cpfCnpj ? String(pessoaData.cpf_cnpj || pessoaData.cpfCnpj) : undefined,
+      tipo: String(pessoaData.tipo_pessoa || pessoaData.tipoPessoa || "F"),
     };
 
     // Salvar no cache
@@ -165,9 +175,12 @@ export async function getCategoria(
       path: `/categorias/${categoriaId}`,
     });
 
+    // Type assertion - response da API Tiny
+    const categoriaData = response as Record<string, unknown>;
+
     const categoria: CachedCategoria = {
       id: categoriaId,
-      nome: response.nome || response.descricao || "",
+      nome: String(categoriaData.nome || categoriaData.descricao || ""),
     };
 
     // Salvar no cache
