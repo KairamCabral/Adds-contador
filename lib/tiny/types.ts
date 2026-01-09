@@ -141,13 +141,18 @@ export type TinyContaPagar = {
 export type TinyProduto = {
   id: number;
   codigo?: string;
+  sku?: string;
   nome: string;
+  descricao?: string;
   preco: number;
   preco_custo?: number;
   unidade?: string;
   categoria?: string;
   estoque?: number;
   estoque_minimo?: number;
+  saldo?: number;
+  saldoFisico?: number;
+  custoMedio?: number;
 };
 
 export type TinyEstoque = {
