@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return new NextResponse(buffer, {
+  return new Response(buffer, {
     status: 200,
     headers: {
       "Content-Type": "application/json",
