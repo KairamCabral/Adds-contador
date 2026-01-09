@@ -64,7 +64,8 @@ export function transformPedidoDetalheToVendas(
   detalhe: TinyPedidoDetalhe,
   enrichData?: { produtos?: Map<number, unknown> }
 ): VwVendasInput[] {
-  // Extração segura de campos aninhadosconst dataHora = toDate(detalhe.dataPedido ?? detalhe.data) ?? new Date();
+  // Extração segura de campos aninhados
+  const dataHora = toDate(detalhe.dataPedido ?? detalhe.data) ?? new Date();
   const cliente = safeText(safeGet(detalhe, ["cliente", "nome"]), "Cliente não identificado");
   const cnpjCliente = safeText(safeGet(detalhe, ["cliente", "cpfCnpj"]));
   const vendedor = safeText(safeGet(detalhe, ["vendedor", "nome"]));
@@ -87,7 +88,9 @@ export function transformPedidoDetalheToVendas(
   ) || "N/D";
 
   const status = mapSituacao(detalhe.situacao);
-  const itens = detalhe.itens || [];if (itens.length === 0) {
+  const itens = detalhe.itens || [];
+  
+  if (itens.length === 0) {
     // Pedido sem itens: criar linha única com valor total
     debugWarn("vw_vendas", "itens", itens, "detalhe.itens");
     
