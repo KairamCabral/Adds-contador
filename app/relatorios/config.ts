@@ -23,7 +23,7 @@ export const reports: Record<ReportView, ReportConfig> = {
   vw_vendas: {
     title: "Vendas",
     dateField: "dataHora",
-    statusField: "status",
+    statusField: undefined,
     searchFields: ["produto", "cliente", "cnpjCliente", "vendedor"],
     columns: [
       { key: "dataHora", label: "Data/Hora" },
@@ -35,7 +35,7 @@ export const reports: Record<ReportView, ReportConfig> = {
       { key: "formaPagamento", label: "Forma Pagamento" },
       { key: "vendedor", label: "Vendedor" },
       { key: "cliente", label: "Cliente" },
-      { key: "cnpjCliente", label: "CNPJ Cliente" },
+      { key: "cnpjCliente", label: "CPF/CNPJ" },
       { key: "caixa", label: "Caixa" },
       { key: "status", label: "Status" },
     ],
@@ -102,7 +102,7 @@ export const reports: Record<ReportView, ReportConfig> = {
     title: "Estoque (Snapshot)",
     dateField: "dataReferencia",
     statusField: undefined,
-    searchFields: ["produto", "categoria", "responsavelConferencia"],
+    searchFields: ["produto", "categoria"],
     columns: [
       { key: "dataReferencia", label: "Data Referência" },
       { key: "produto", label: "Produto" },
@@ -116,9 +116,7 @@ export const reports: Record<ReportView, ReportConfig> = {
       { key: "custoMedio", label: "Custo Médio" },
       { key: "valorTotalEstoque", label: "Valor Total" },
       { key: "fornecedorUltimaCompra", label: "Fornecedor Última Compra" },
-      { key: "dataUltimaCompra", label: "Data Última Compra" },
-      { key: "responsavelConferencia", label: "Responsável" },
-      { key: "observacao", label: "Observação" },
+      { key: "dataUltimaCompra", label: "Última Compra" },
     ],
   },
   vw_contas_recebidas: {

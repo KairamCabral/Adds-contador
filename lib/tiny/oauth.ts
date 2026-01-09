@@ -1,10 +1,11 @@
 import crypto from "crypto";
 
+// Tiny usa Keycloak/OIDC (Tiny agora é Olist)
 const AUTH_BASE =
-  process.env.TINY_AUTH_BASE?.replace(/\/$/, "") ?? "https://oauth.tiny.com.br";
+  process.env.TINY_AUTH_BASE?.replace(/\/$/, "") ?? "https://accounts.tiny.com.br";
 
-const AUTHORIZE_URL = `${AUTH_BASE}/authorize`;
-const TOKEN_URL = `${AUTH_BASE}/token`;
+const AUTHORIZE_URL = `${AUTH_BASE}/realms/tiny/protocol/openid-connect/auth`;
+const TOKEN_URL = `${AUTH_BASE}/realms/tiny/protocol/openid-connect/token`;
 
 type OAuthStatePayload = {
   companyId: string;
@@ -75,6 +76,11 @@ const getClient = () => {
 
 export function buildAuthorizeUrl(state: string, scope?: string) {
   const { clientId, redirectUri } = getClient();
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/oauth.ts:76',message:'buildAuthorizeUrl called',data:{authBase:AUTH_BASE,authorizeUrl:AUTHORIZE_URL,clientId:clientId.substring(0,20)+'...',redirectUri,state:state.substring(0,20)+'...'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F,G,H'})}).catch(()=>{});
+  // #endregion
+  
   const url = new URL(AUTHORIZE_URL);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", clientId);

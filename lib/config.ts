@@ -102,8 +102,8 @@ export function getSyncConfig() {
 export function getSafeConfig() {
   return {
     tinyApiBase:
-      process.env.TINY_API_BASE ?? "https://api.tiny.com.br/public-api/v3",
-    tinyAuthBase: process.env.TINY_AUTH_BASE ?? "https://oauth.tiny.com.br",
+      process.env.TINY_API_BASE ?? "https://erp.tiny.com.br/public-api/v3",
+    tinyAuthBase: process.env.TINY_AUTH_BASE ?? "https://accounts.tiny.com.br",
     tinyRedirectUri: process.env.TINY_REDIRECT_URI ?? "not_configured",
     tinyClientId: process.env.TINY_CLIENT_ID
       ? `${process.env.TINY_CLIENT_ID.substring(0, 8)}...`

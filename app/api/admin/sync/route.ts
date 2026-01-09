@@ -13,6 +13,10 @@ const isCronRequest = (req: NextRequest) => {
 };
 
 export async function POST(request: NextRequest) {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:15',message:'POST /api/admin/sync called',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ALL'})}).catch(()=>{});
+  // #endregion
+  
   const session = await auth();
   const cron = isCronRequest(request);
 
@@ -34,12 +38,27 @@ export async function POST(request: NextRequest) {
 
   const companyId = body?.companyId as string | undefined;
 
-  const result = await runSync({
-    companyId,
-    triggeredByUserId: session?.user?.id,
-    isCron: cron,
-  });
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:36',message:'Calling runSync',data:{companyId,userId:session?.user?.id,isCron:cron},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
-  return NextResponse.json({ ok: true, runIds: result.runIds });
+  try {
+    const result = await runSync({
+      companyId,
+      triggeredByUserId: session?.user?.id,
+      isCron: cron,
+    });
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:44',message:'runSync completed',data:{runIds:result.runIds},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ALL'})}).catch(()=>{});
+    // #endregion
+
+    return NextResponse.json({ ok: true, runIds: result.runIds });
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:50',message:'runSync error caught',data:{errorMsg:error?.message,errorStack:error?.stack},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ALL'})}).catch(()=>{});
+    // #endregion
+    throw error;
+  }
 }
 

@@ -21,7 +21,6 @@ import {
   TinyContaReceber,
   TinyContaPagar,
   TinyProduto,
-  TinyEstoque,
   TinyContato,
   TinyPedidoSearchParams,
   TinyContaSearchParams,
@@ -130,6 +129,10 @@ export async function listAllPedidos(
   dataFinal: Date,
   situacao?: string
 ): Promise<TinyPedidoResumo[]> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:127',message:'listAllPedidos entry',data:{dataInicial:formatDateForTiny(dataInicial),dataFinal:formatDateForTiny(dataFinal),situacao},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
   const allPedidos: TinyPedidoResumo[] = [];
   let pagina = 1;
   let hasMore = true;
@@ -139,12 +142,17 @@ export async function listAllPedidos(
   );
 
   while (hasMore) {
-    const response = await listPedidos(connection, {
-      dataInicial: formatDateForTiny(dataInicial),
-      dataFinal: formatDateForTiny(dataFinal),
-      situacao,
-      pagina,
-    });
+    try {
+      const response = await listPedidos(connection, {
+        dataInicial: formatDateForTiny(dataInicial),
+        dataFinal: formatDateForTiny(dataFinal),
+        situacao,
+        pagina,
+      });
+
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:149',message:'listPedidos page response',data:{pagina,itensCount:response.itens?.length,totalPages:response.numero_paginas},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
     if (response.itens && response.itens.length > 0) {
       allPedidos.push(...response.itens);
@@ -159,7 +167,17 @@ export async function listAllPedidos(
     } else {
       hasMore = false;
     }
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:172',message:'listPedidos page error',data:{pagina,errorMsg:error?.message,errorStack:error?.stack?.split('\n').slice(0,2).join('\n')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      throw error;
+    }
   }
+
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:180',message:'listAllPedidos exit',data:{totalPedidos:allPedidos.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
 
   console.log(`[Tiny] Total de pedidos encontrados: ${allPedidos.length}`);
   return allPedidos;
@@ -274,6 +292,9 @@ export async function listAllContasPagar(
   dataFinal: Date,
   situacao?: string
 ): Promise<TinyContaPagar[]> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:289',message:'listAllContasPagar ENTRY',data:{dataInicial:dataInicial.toISOString(),dataFinal:dataFinal.toISOString(),situacao,dataInicialFormatted:formatDateForTiny(dataInicial),dataFinalFormatted:formatDateForTiny(dataFinal)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   const allContas: TinyContaPagar[] = [];
   let pagina = 1;
   let hasMore = true;
@@ -289,6 +310,9 @@ export async function listAllContasPagar(
       situacao,
       pagina,
     });
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:310',message:'listContasPagar API RESPONSE',data:{pagina,hasItens:!!response.itens,itensLength:response.itens?.length||0,numero_paginas:response.numero_paginas,totalRegistros:response.total_registros,firstItemId:response.itens?.[0]?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
 
     if (response.itens && response.itens.length > 0) {
       allContas.push(...response.itens);
@@ -329,20 +353,48 @@ export async function listProdutos(
 }
 
 /**
- * Lista estoque atual
- * Endpoint V3: GET /estoques
+ * Lista todos os produtos (com paginação automática)
+ * Usado para obter dados de estoque (saldo) de cada produto
  */
-export async function listEstoque(
-  connection: TinyConnection,
-  pagina = 1
-): Promise<TinyPaginatedResponse<TinyEstoque>> {
-  return withRetry(() =>
-    tinyRequest<TinyPaginatedResponse<TinyEstoque>>({
-      connection,
-      path: "/estoques",
-      query: { pagina },
-    })
-  );
+export async function listAllProdutos(
+  connection: TinyConnection
+): Promise<TinyProduto[]> {
+  const allProdutos: TinyProduto[] = [];
+  let pagina = 1;
+  let hasMore = true;
+
+  console.log(`[Tiny] Buscando todos os produtos (para estoque)...`);
+
+  while (hasMore) {
+    try {
+      // Usar withRetry com mais tentativas e delay maior para rate limit
+      const response = await withRetry(
+        () => listProdutos(connection, pagina),
+        5, // maxRetries aumentado de 3 para 5
+        2000 // baseDelay aumentado de 1000ms para 2000ms
+      );
+
+      if (response.itens && response.itens.length > 0) {
+        allProdutos.push(...response.itens);
+        console.log(
+          `[Tiny] Produtos página ${pagina}/${response.numero_paginas || "?"}: +${response.itens.length} (total: ${allProdutos.length})`
+        );
+        pagina++;
+        hasMore = response.numero_paginas ? pagina <= response.numero_paginas : response.itens.length >= 50;
+        // Delay maior entre páginas para evitar rate limit
+        if (hasMore) await sleep(1000); // Aumentado de 300ms para 1000ms
+      } else {
+        hasMore = false;
+      }
+    } catch (err) {
+      // Se falhar mesmo com retries, logar e parar
+      console.error(`[Tiny] Erro ao buscar produtos página ${pagina}:`, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+
+  console.log(`[Tiny] Total de produtos: ${allProdutos.length}`);
+  return allProdutos;
 }
 
 // ============================================
@@ -463,4 +515,90 @@ export async function runSmokeTest(
   const success = tests.every((t) => t.status === 200);
 
   return { success, apiBase, tests };
+}
+
+// ============================================
+// ESTOQUE
+// ============================================
+
+export interface TinyEstoqueSearchParams {
+  dataInicial?: string;
+  dataFinal?: string;
+  produtoId?: number;
+  depositoId?: number;
+  pagina?: number;
+}
+
+export interface TinyEstoqueItem {
+  id: number;
+  produto: {
+    id: number;
+    sku: string;
+    descricao: string;
+  };
+  deposito: {
+    id: number;
+    nome: string;
+  };
+  saldo: number;
+  saldoReservado?: number;
+  dataUltimaMovimentacao?: string;
+  custoMedio?: number;
+  valorTotal?: number;
+}
+
+/**
+ * Lista estoque (posição atual ou movimentações)
+ */
+export async function listEstoque(
+  connection: TinyConnection,
+  params: TinyEstoqueSearchParams = {}
+): Promise<TinyPaginatedResponse<TinyEstoqueItem>> {
+  const query: Record<string, string | number> = {
+    pagina: params.pagina ?? 1,
+  };
+
+  if (params.produtoId) query.produtoId = params.produtoId;
+  if (params.depositoId) query.depositoId = params.depositoId;
+  if (params.dataInicial) query.dataInicial = params.dataInicial;
+  if (params.dataFinal) query.dataFinal = params.dataFinal;
+
+  return withRetry(() =>
+    tinyRequest<TinyPaginatedResponse<TinyEstoqueItem>>({
+      connection,
+      path: "/estoques",
+      query,
+    })
+  );
+}
+
+/**
+ * Lista todo o estoque (snapshot completo - posição atual)
+ */
+export async function listAllEstoque(
+  connection: TinyConnection
+): Promise<TinyEstoqueItem[]> {
+  const allItens: TinyEstoqueItem[] = [];
+  let pagina = 1;
+  let hasMore = true;
+
+  console.log(`[Tiny] Buscando snapshot completo de estoque`);
+
+  while (hasMore) {
+    const response = await listEstoque(connection, { pagina });
+
+    if (response.itens && response.itens.length > 0) {
+      allItens.push(...response.itens);
+      console.log(
+        `[Tiny] Estoque página ${pagina}/${response.numero_paginas}: +${response.itens.length} (total: ${allItens.length})`
+      );
+      pagina++;
+      hasMore = pagina <= response.numero_paginas;
+      if (hasMore) await sleep(300);
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allItens;
 }

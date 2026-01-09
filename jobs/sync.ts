@@ -11,15 +11,18 @@ import {
   listAllContasReceber,
   listAllContasPagar,
   getPedido,
+  listAllEstoque,
 } from "@/lib/tiny/api";
 import {
   transformPedidoResumoToVenda,
-  transformPedidoToVendas,
+  transformPedidoDetalheToVendas,
   transformContaReceberToPosicao,
   transformContaPagarToView,
   transformContaPagaToView,
   transformContaRecebidaToView,
+  transformProdutoToEstoque,
 } from "@/lib/tiny/transformers";
+import { getProduto, clearCache, getCacheStats } from "@/lib/tiny/enrichment";
 
 // ============================================
 // TIPOS
@@ -29,11 +32,15 @@ type SyncOptions = {
   companyId?: string;
   triggeredByUserId?: string;
   isCron?: boolean;
+  startDate?: Date;
+  endDate?: Date;
+  modules?: SyncModule[];
 };
 
 type ModuleResult = {
   module: string;
   processed: number;
+  skipped?: number;
   errors?: string[];
 };
 
@@ -42,7 +49,8 @@ type SyncModule =
   | "vw_contas_receber_posicao"
   | "vw_contas_pagar"
   | "vw_contas_pagas"
-  | "vw_contas_recebidas";
+  | "vw_contas_recebidas"
+  | "vw_estoque";
 
 // ============================================
 // CONFIGURAÇÃO
@@ -58,8 +66,11 @@ const P0_MODULES: SyncModule[] = [
 // Módulos P1 (secundários)
 const P1_MODULES: SyncModule[] = ["vw_contas_pagas", "vw_contas_recebidas"];
 
+// Módulos P2 (estoque - snapshot diário)
+const P2_MODULES: SyncModule[] = ["vw_estoque"];
+
 // Todos os módulos para sync completo
-const ALL_MODULES: SyncModule[] = [...P0_MODULES, ...P1_MODULES];
+const ALL_MODULES: SyncModule[] = [...P0_MODULES, ...P1_MODULES, ...P2_MODULES];
 
 // Configuração de lookback (via env vars)
 const { initialLookbackDays: INITIAL_SYNC_DAYS, incrementalLookbackDays: INCREMENTAL_SYNC_DAYS } = getSyncConfig();
@@ -149,22 +160,36 @@ const updateSyncCursor = async (
 
 const syncVendas = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_vendas";
   const errors: string[] = [];
   let processed = 0;
+  let skipped = 0;
 
   try {
     // Determinar período de busca
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
-    const dataFinal = now;
-    const dataInicial = cursor?.lastSyncedAt
-      ? new Date(
-          cursor.lastSyncedAt.getTime() - INCREMENTAL_SYNC_DAYS * 24 * 60 * 60 * 1000
-        )
-      : new Date(now.getTime() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000);
+    
+    let dataFinal: Date;
+    let dataInicial: Date;
+    
+    // Se datas específicas foram fornecidas, usar elas
+    if (options?.startDate && options?.endDate) {
+      dataInicial = options.startDate;
+      dataFinal = options.endDate;
+    } else {
+      // Lookback reduzido para cron (30 dias) ou padrão (90 inicial / 7 incremental)
+      const lookbackDays = options?.isCron ? 30 : INITIAL_SYNC_DAYS;
+      const incrementalDays = options?.isCron ? 7 : INCREMENTAL_SYNC_DAYS;
+      
+      dataFinal = now;
+      dataInicial = cursor?.lastSyncedAt
+        ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    }
 
     console.log(
       `[Sync ${module}] Buscando pedidos de ${dataInicial.toISOString()} até ${dataFinal.toISOString()}`
@@ -174,68 +199,159 @@ const syncVendas = async (
     const pedidos = await listAllPedidos(connection, dataInicial, dataFinal);
     console.log(`[Sync ${module}] Encontrados ${pedidos.length} pedidos`);
 
-    // Processar cada pedido
+    // FASE 1: Coletar IDs únicos de produtos para enrichment
+    const produtoIds = new Set<number>();
+    const pedidosDetalhados: any[] = [];
+    
     for (const pedido of pedidos) {
       try {
-        // Para cada pedido, buscar detalhes com itens
+        const detalhe = await getPedido(connection, pedido.id);
+        pedidosDetalhados.push(detalhe);
+        
+        // Coletar IDs de produtos
+        if (detalhe.itens && Array.isArray(detalhe.itens)) {
+          for (const item of detalhe.itens) {
+            const produtoId = item?.produto?.id;
+            if (produtoId && typeof produtoId === 'number') {
+              produtoIds.add(produtoId);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Sync] Falha ao buscar pedido ${pedido.id}, pulando enrichment`);
+        pedidosDetalhados.push(null); // Placeholder para manter índice
+      }
+    }
+
+    console.log(`[Sync ${module}] Enriquecendo ${produtoIds.size} produtos únicos...`);
+
+    // FASE 2: Buscar informações de produtos (categorias) em paralelo
+    const produtosEnriquecidos = new Map<number, any>();
+    const produtoIdsArray = Array.from(produtoIds);
+    
+    // Buscar produtos com concorrência limitada (5 por vez)
+    for (let i = 0; i < produtoIdsArray.length; i += 5) {
+      const batch = produtoIdsArray.slice(i, i + 5);
+      const results = await Promise.allSettled(
+        batch.map(id => getProduto(connection, id))
+      );
+      
+      results.forEach((result, idx) => {
+        if (result.status === 'fulfilled' && result.value) {
+          produtosEnriquecidos.set(batch[idx], result.value);
+        }
+      });
+      
+      // Pequeno delay entre batches para evitar rate limit 429
+      if (i + 5 < produtoIdsArray.length) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncVendas',message:'Enrichment completo',data:{totalProdutosUnicos:produtoIds.size,produtosEnriquecidos:produtosEnriquecidos.size,amostraCategorias:Array.from(produtosEnriquecidos.values()).slice(0,3).map(p=>({sku:p.sku,categoria:p.categoria?.nome}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_ENRICH'})}).catch(()=>{});
+    // #endregion
+
+    // FASE 3: Processar cada pedido com enrichment
+    for (let i = 0; i < pedidosDetalhados.length; i++) {
+      const detalhe = pedidosDetalhados[i];
+      const pedido = pedidos[i];
+      
+      try {
+        // Para cada pedido, transformar com enrichment
         let vendas;
         try {
-          const detalhe = await getPedido(connection, pedido.id);
-          if (detalhe.itens && detalhe.itens.length > 0) {
-            vendas = transformPedidoToVendas(companyId, pedido, detalhe.itens);
+          if (detalhe) {
+            // Usar o pedido DETALHE completo (com cliente, pagamento, itens) + enrichment
+            vendas = transformPedidoDetalheToVendas(companyId, detalhe, {
+              produtos: produtosEnriquecidos,
+            });
           } else {
+            // Fallback para pedido resumo
             vendas = [transformPedidoResumoToVenda(companyId, pedido)];
           }
-        } catch {
-          // Se falhar ao buscar detalhe, usar resumo
+        } catch (detailErr) {
+          const msg = detailErr instanceof Error ? detailErr.message : String(detailErr);
+          console.warn(`[Sync] Falha ao transformar pedido ${pedido.id}: ${msg.substring(0, 200)}`);
           vendas = [transformPedidoResumoToVenda(companyId, pedido)];
         }
 
-        // Upsert cada venda
+        // Upsert cada venda (com per-row error handling)
         for (const venda of vendas) {
-          await prisma.vwVendas.upsert({
-            where: { id: venda.id as string },
-            create: venda,
-            update: {
-              dataHora: venda.dataHora,
-              produto: venda.produto,
-              categoria: venda.categoria,
-              quantidade: venda.quantidade,
-              valorUnitario: venda.valorUnitario,
-              valorTotal: venda.valorTotal,
-              formaPagamento: venda.formaPagamento,
-              vendedor: venda.vendedor,
-              cliente: venda.cliente,
-              cnpjCliente: venda.cnpjCliente,
-              caixa: venda.caixa,
-              status: venda.status,
-            },
-          });
-          processed++;
+          try {
+            await prisma.vwVendas.upsert({
+              where: { id: venda.id as string },
+              create: venda,
+              update: {
+                dataHora: venda.dataHora,
+                produto: venda.produto,
+                categoria: venda.categoria,
+                quantidade: venda.quantidade,
+                valorUnitario: venda.valorUnitario,
+                valorTotal: venda.valorTotal,
+                formaPagamento: venda.formaPagamento,
+                vendedor: venda.vendedor,
+                cliente: venda.cliente,
+                cnpjCliente: venda.cnpjCliente,
+                caixa: venda.caixa,
+                status: venda.status,
+              },
+            });
+            processed++;
+          } catch (upsertErr) {
+            const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
+            console.warn(`[Sync] Pulando venda ${venda.id}: ${msg.substring(0, 100)}`);
+            errors.push(`Venda ${venda.id}: ${msg.split("\n")[0]}`); // Só primeira linha
+            skipped++;
+          }
         }
 
-        // Salvar payload raw para auditoria
-        await prisma.rawPayload.create({
-          data: {
-            companyId,
-            module,
-            externalId: String(pedido.id),
-            payload: pedido as unknown as object,
-          },
-        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Pedido ${pedido.id}: ${msg}`);
       }
     }
 
+    // Salvar payloads raw em batch (fora do loop principal)
+    if (pedidos.length > 0) {
+      try {
+        await prisma.rawPayload.createMany({
+          data: pedidos.map((pedido) => ({
+            companyId,
+            module,
+            externalId: String(pedido.id),
+            payload: pedido as unknown as object,
+          })),
+          skipDuplicates: true,
+        });
+      } catch (err) {
+        console.warn(`[Sync ${module}] Erro ao salvar payloads raw:`, err);
+      }
+    }
+
+    // Estatísticas do cache de enrichment
+    const cacheStats = getCacheStats(connection.id);
+    console.log(`[Sync ${module}] Cache: ${cacheStats.produtos} produtos, ${cacheStats.pessoas} pessoas, ${cacheStats.categorias} categorias`);
+
+    // Limpar cache após sync
+    clearCache(connection.id);
+
     // Atualizar cursor
     await updateSyncCursor(companyId, module, now);
 
-    return { module, processed, errors: errors.length ? errors : undefined };
+    return { 
+      module, 
+      processed, 
+      skipped,
+      errors: errors.length ? errors : undefined 
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { module, processed: 0, errors: [msg] };
+    // Limpar cache mesmo em erro
+    clearCache(connection.id);
+    return { module, processed: 0, skipped: 0, errors: [msg] };
   }
 };
 
@@ -245,7 +361,8 @@ const syncVendas = async (
 
 const syncContasReceberPosicao = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_contas_receber_posicao";
   const errors: string[] = [];
@@ -255,27 +372,32 @@ const syncContasReceberPosicao = async (
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
     const dataPosicao = new Date(now.toISOString().split("T")[0]); // Início do dia
-    const dataFinal = now;
-    const dataInicial = cursor?.lastSyncedAt
-      ? new Date(
-          cursor.lastSyncedAt.getTime() - INCREMENTAL_SYNC_DAYS * 24 * 60 * 60 * 1000
-        )
-      : new Date(now.getTime() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000);
+    
+    let dataFinal: Date;
+    let dataInicial: Date;
+    
+    if (options?.startDate && options?.endDate) {
+      dataInicial = options.startDate;
+      dataFinal = options.endDate;
+    } else {
+      const lookbackDays = options?.isCron ? 30 : INITIAL_SYNC_DAYS;
+      const incrementalDays = options?.isCron ? 7 : INCREMENTAL_SYNC_DAYS;
+      
+      dataFinal = now;
+      dataInicial = cursor?.lastSyncedAt
+        ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    }
 
     console.log(
       `[Sync ${module}] Buscando contas a receber de ${dataInicial.toISOString()} até ${dataFinal.toISOString()}`
-    );
-
-    // Buscar apenas contas abertas para posição
+    );// Buscar apenas contas abertas para posição
     const contas = await listAllContasReceber(
       connection,
       dataInicial,
       dataFinal,
       "aberto"
-    );
-    console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
-
-    for (const conta of contas) {
+    );console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);for (const conta of contas) {
       try {
         const posicao = transformContaReceberToPosicao(
           companyId,
@@ -298,19 +420,26 @@ const syncContasReceberPosicao = async (
           },
         });
         processed++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`Conta ${conta.id}: ${msg}`);
+      }
+    }
 
-        // Salvar payload raw
-        await prisma.rawPayload.create({
-          data: {
+    // Salvar payloads raw em batch (fora do loop principal)
+    if (contas.length > 0) {
+      try {
+        await prisma.rawPayload.createMany({
+          data: contas.map((conta) => ({
             companyId,
             module,
             externalId: String(conta.id),
             payload: conta as unknown as object,
-          },
+          })),
+          skipDuplicates: true,
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Conta ${conta.id}: ${msg}`);
+        console.warn(`[Sync ${module}] Erro ao salvar payloads raw:`, err);
       }
     }
 
@@ -329,7 +458,8 @@ const syncContasReceberPosicao = async (
 
 const syncContasPagar = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_contas_pagar";
   const errors: string[] = [];
@@ -338,12 +468,22 @@ const syncContasPagar = async (
   try {
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
-    const dataFinal = now;
-    const dataInicial = cursor?.lastSyncedAt
-      ? new Date(
-          cursor.lastSyncedAt.getTime() - INCREMENTAL_SYNC_DAYS * 24 * 60 * 60 * 1000
-        )
-      : new Date(now.getTime() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000);
+    
+    let dataFinal: Date;
+    let dataInicial: Date;
+    
+    if (options?.startDate && options?.endDate) {
+      dataInicial = options.startDate;
+      dataFinal = options.endDate;
+    } else {
+      const lookbackDays = options?.isCron ? 30 : INITIAL_SYNC_DAYS;
+      const incrementalDays = options?.isCron ? 7 : INCREMENTAL_SYNC_DAYS;
+      
+      dataFinal = now;
+      dataInicial = cursor?.lastSyncedAt
+        ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    }
 
     console.log(
       `[Sync ${module}] Buscando contas a pagar de ${dataInicial.toISOString()} até ${dataFinal.toISOString()}`
@@ -360,7 +500,13 @@ const syncContasPagar = async (
 
     for (const conta of contas) {
       try {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:457',message:'BEFORE transform ContaPagar',data:{contaId:conta.id,contaKeys:Object.keys(conta)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const contaView = transformContaPagarToView(companyId, conta);
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:459',message:'AFTER transform ContaPagar',data:{contaViewId:contaView.id,fornecedor:contaView.fornecedor,categoria:contaView.categoria,valor:contaView.valor?.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
 
         await prisma.vwContasPagar.upsert({
           where: { id: contaView.id as string },
@@ -376,27 +522,47 @@ const syncContasPagar = async (
             formaPagto: contaView.formaPagto,
           },
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:475',message:'AFTER upsert ContaPagar SUCCESS',data:{contaId:conta.id,processed:processed+1},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         processed++;
-
-        // Salvar payload raw
-        await prisma.rawPayload.create({
-          data: {
-            companyId,
-            module,
-            externalId: String(conta.id),
-            payload: conta as unknown as object,
-          },
-        });
       } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:478',message:'ERROR processing ContaPagar',data:{contaId:conta.id,error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
+        // #endregion
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`Conta ${conta.id}: ${msg}`);
       }
     }
 
+    // Salvar payloads raw em batch (fora do loop principal)
+    if (contas.length > 0) {
+      try {
+        await prisma.rawPayload.createMany({
+          data: contas.map((conta) => ({
+            companyId,
+            module,
+            externalId: String(conta.id),
+            payload: conta as unknown as object,
+          })),
+          skipDuplicates: true,
+        });
+      } catch (err) {
+        console.warn(`[Sync ${module}] Erro ao salvar payloads raw:`, err);
+      }
+    }
+
     await updateSyncCursor(companyId, module, now);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:513',message:'syncContasPagar COMPLETE',data:{totalFetched:contas.length,processed,errorsCount:errors.length,firstError:errors[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C,D,E'})}).catch(()=>{});
+    // #endregion
 
     return { module, processed, errors: errors.length ? errors : undefined };
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:518',message:'syncContasPagar EXCEPTION',data:{error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     const msg = err instanceof Error ? err.message : String(err);
     return { module, processed: 0, errors: [msg] };
   }
@@ -408,7 +574,8 @@ const syncContasPagar = async (
 
 const syncContasPagas = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_contas_pagas";
   const errors: string[] = [];
@@ -417,12 +584,22 @@ const syncContasPagas = async (
   try {
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
-    const dataFinal = now;
-    const dataInicial = cursor?.lastSyncedAt
-      ? new Date(
-          cursor.lastSyncedAt.getTime() - INCREMENTAL_SYNC_DAYS * 24 * 60 * 60 * 1000
-        )
-      : new Date(now.getTime() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000);
+    
+    let dataFinal: Date;
+    let dataInicial: Date;
+    
+    if (options?.startDate && options?.endDate) {
+      dataInicial = options.startDate;
+      dataFinal = options.endDate;
+    } else {
+      const lookbackDays = options?.isCron ? 30 : INITIAL_SYNC_DAYS;
+      const incrementalDays = options?.isCron ? 7 : INCREMENTAL_SYNC_DAYS;
+      
+      dataFinal = now;
+      dataInicial = cursor?.lastSyncedAt
+        ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    }
 
     // Buscar contas pagas
     const contas = await listAllContasPagar(
@@ -431,6 +608,10 @@ const syncContasPagas = async (
       dataFinal,
       "pago"
     );
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncContasPagas',message:'Contas pagas encontradas',data:{totalContas:contas.length,periodo:{inicio:dataInicial.toISOString(),fim:dataFinal.toISOString()},amostraContas:contas.slice(0,2).map(c=>({id:c.id,fornecedor:c.fornecedor?.nome,valor:c.valor}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_PAGAS'})}).catch(()=>{});
+    // #endregion
 
     for (const conta of contas) {
       try {
@@ -480,7 +661,8 @@ const syncContasPagas = async (
 
 const syncContasRecebidas = async (
   companyId: string,
-  connection: TinyConnection
+  connection: TinyConnection,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult> => {
   const module = "vw_contas_recebidas";
   const errors: string[] = [];
@@ -489,12 +671,22 @@ const syncContasRecebidas = async (
   try {
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
-    const dataFinal = now;
-    const dataInicial = cursor?.lastSyncedAt
-      ? new Date(
-          cursor.lastSyncedAt.getTime() - INCREMENTAL_SYNC_DAYS * 24 * 60 * 60 * 1000
-        )
-      : new Date(now.getTime() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000);
+    
+    let dataFinal: Date;
+    let dataInicial: Date;
+    
+    if (options?.startDate && options?.endDate) {
+      dataInicial = options.startDate;
+      dataFinal = options.endDate;
+    } else {
+      const lookbackDays = options?.isCron ? 30 : INITIAL_SYNC_DAYS;
+      const incrementalDays = options?.isCron ? 7 : INCREMENTAL_SYNC_DAYS;
+      
+      dataFinal = now;
+      dataInicial = cursor?.lastSyncedAt
+        ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+    }
 
     // Buscar contas recebidas
     const contas = await listAllContasReceber(
@@ -503,6 +695,10 @@ const syncContasRecebidas = async (
       dataFinal,
       "pago"
     );
+
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'jobs/sync.ts:syncContasRecebidas',message:'Contas recebidas encontradas',data:{totalContas:contas.length,periodo:{inicio:dataInicial.toISOString(),fim:dataFinal.toISOString()},amostraContas:contas.slice(0,2).map(c=>({id:c.id,cliente:c.cliente?.nome,valor:c.valor}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_RECEBIDAS'})}).catch(()=>{});
+    // #endregion
 
     for (const conta of contas) {
       try {
@@ -550,13 +746,134 @@ const syncContasRecebidas = async (
 };
 
 // ============================================
+// SYNC DE ESTOQUE (Snapshot Diário)
+// ============================================
+
+const syncEstoque = async (
+  companyId: string,
+  connection: TinyConnection
+): Promise<ModuleResult> => {
+  const module = "vw_estoque";
+  const errors: string[] = [];
+  let processed = 0;
+  let skipped = 0;
+
+  try {
+    // Estoque é um snapshot, sempre busca posição completa atual
+    const now = new Date();
+    const dataSnapshot = now;
+
+    console.log(`[Sync ${module}] Aguardando 5s para evitar rate limit...`);
+    await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos de pausa
+
+    console.log(`[Sync ${module}] Buscando e processando produtos em streaming...`);
+
+    // Buscar e processar produtos PÁGINA POR PÁGINA (streaming)
+    // Se der erro em uma página, já teremos salvo as anteriores
+    const { listProdutos } = await import("@/lib/tiny/api");
+    let pagina = 1;
+    let hasMore = true;
+    let totalProdutos = 0;
+
+    while (hasMore) {
+      try {
+        const response = await listProdutos(connection, pagina);
+        
+        if (!response.itens || response.itens.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        console.log(`[Sync ${module}] Processando página ${pagina}: ${response.itens.length} produtos`);
+        
+        // Processar IMEDIATAMENTE cada produto desta página
+        for (const produto of response.itens) {
+          try {
+            const estoqueView = transformProdutoToEstoque(companyId, produto, dataSnapshot);
+
+            await prisma.vwEstoque.upsert({
+              where: { id: estoqueView.id as string },
+              create: estoqueView,
+              update: {
+                produto: estoqueView.produto,
+                categoria: estoqueView.categoria,
+                unidadeMedida: estoqueView.unidadeMedida,
+                estoqueInicial: estoqueView.estoqueInicial,
+                entradas: estoqueView.entradas,
+                saidas: estoqueView.saidas,
+                ajustes: estoqueView.ajustes,
+                estoqueFinal: estoqueView.estoqueFinal,
+                custoMedio: estoqueView.custoMedio,
+                valorTotalEstoque: estoqueView.valorTotalEstoque,
+                fornecedorUltimaCompra: estoqueView.fornecedorUltimaCompra,
+                dataUltimaCompra: estoqueView.dataUltimaCompra,
+              },
+            });
+            processed++;
+          } catch (upsertErr) {
+            const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
+            console.warn(`[Sync] Pulando produto ${produto.sku ?? produto.codigo ?? produto.id}: ${msg.substring(0, 100)}`);
+            errors.push(`Produto ${produto.sku ?? produto.codigo ?? produto.id}: ${msg.split("\n")[0]}`);
+            skipped++;
+          }
+        }
+
+        totalProdutos += response.itens.length;
+        console.log(`[Sync ${module}] Salvos ${processed} de ${totalProdutos} produtos até agora`);
+
+        // Verificar se há mais páginas
+        hasMore = response.numero_paginas ? pagina < response.numero_paginas : response.itens.length >= 50;
+        
+        if (hasMore) {
+          pagina++;
+          // Delay entre páginas
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+      } catch (pageErr) {
+        // Se der erro em uma página, logar mas NÃO abortar tudo
+        const msg = pageErr instanceof Error ? pageErr.message : String(pageErr);
+        console.error(`[Sync ${module}] Erro na página ${pagina}: ${msg}`);
+        errors.push(`Página ${pagina}: ${msg}`);
+        
+        // Se for rate limit, parar aqui (já salvamos o que conseguimos)
+        if (msg.includes("429")) {
+          console.warn(`[Sync ${module}] Rate limit atingido. Salvos ${processed} produtos até a página ${pagina-1}.`);
+          break;
+        }
+        
+        // Para outros erros, tentar próxima página
+        pagina++;
+      }
+    }
+
+    console.log(`[Sync ${module}] Total processado: ${processed} produtos de ${totalProdutos} encontrados`);
+
+    // Atualizar cursor (última data de snapshot)
+    await updateSyncCursor(companyId, module, dataSnapshot);
+
+    return {
+      module,
+      processed,
+      skipped,
+      errors: errors.length ? errors : undefined,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Sync] FATAL no módulo ${module}:`, msg);
+    return { module, processed: 0, skipped: 0, errors: [msg] };
+  }
+};
+
+// ============================================
 // ORQUESTRADOR PRINCIPAL
 // ============================================
 
 const syncByModule = async (
   companyId: string,
   connection: TinyConnection,
-  modules: SyncModule[] = ALL_MODULES
+  modules: SyncModule[] = ALL_MODULES,
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult[]> => {
   const results: ModuleResult[] = [];
 
@@ -567,22 +884,25 @@ const syncByModule = async (
 
     switch (mod) {
       case "vw_vendas":
-        result = await syncVendas(companyId, connection);
+        result = await syncVendas(companyId, connection, options);
         break;
       case "vw_contas_receber_posicao":
-        result = await syncContasReceberPosicao(companyId, connection);
+        result = await syncContasReceberPosicao(companyId, connection, options);
         break;
       case "vw_contas_pagar":
-        result = await syncContasPagar(companyId, connection);
+        result = await syncContasPagar(companyId, connection, options);
         break;
       case "vw_contas_pagas":
-        result = await syncContasPagas(companyId, connection);
+        result = await syncContasPagas(companyId, connection, options);
         break;
       case "vw_contas_recebidas":
-        result = await syncContasRecebidas(companyId, connection);
+        result = await syncContasRecebidas(companyId, connection, options);
+        break;
+      case "vw_estoque":
+        result = await syncEstoque(companyId, connection);
         break;
       default:
-        result = { module: mod, processed: 0, errors: ["Módulo não implementado"] };
+        result = { module: mod, processed: 0, skipped: 0, errors: ["Módulo não implementado"] };
     }
 
     results.push(result);
@@ -601,10 +921,14 @@ const syncByModule = async (
 // ============================================
 
 export async function runSync(options: SyncOptions) {
+  const SYNC_TIMEOUT_MS = 12 * 60 * 1000; // 12 minutos (permite processar todos os módulos)
+  const syncStartTime = Date.now();
+
   console.log("[Sync] Iniciando sincronização...", {
     companyId: options.companyId ?? "todas",
     triggeredBy: options.triggeredByUserId ?? "system",
     isCron: options.isCron ?? false,
+    timeoutMs: SYNC_TIMEOUT_MS,
   });
 
   const companies = await prisma.company.findMany({
@@ -614,9 +938,7 @@ export async function runSync(options: SyncOptions) {
         take: 1,
       },
     },
-  });
-
-  if (companies.length === 0) {
+  });if (companies.length === 0) {
     console.log("[Sync] Nenhuma empresa encontrada");
     return {
       runIds: [],
@@ -630,16 +952,13 @@ export async function runSync(options: SyncOptions) {
   const results: { companyId: string; companyName: string; status: string; error?: string }[] = [];
 
   for (const company of companies) {
-    const connection = company.connections[0];
-
-    // Sempre criar SyncRun, mesmo se não tiver conexão
+    const connection = company.connections[0];// Sempre criar SyncRun, mesmo se não tiver conexão
     const run = await createRun(company.id, options.triggeredByUserId);
     runIds.push(run.id);
 
     // Verificar se tem conexão Tiny
     if (!connection) {
-      console.log(`[Sync] ${company.name}: Sem conexão Tiny, pulando...`);
-      await finishRun(
+      console.log(`[Sync] ${company.name}: Sem conexão Tiny, pulando...`);await finishRun(
         run.id,
         SyncStatus.FAILED,
         [],
@@ -657,8 +976,33 @@ export async function runSync(options: SyncOptions) {
     console.log(`[Sync] Iniciando sync para ${company.name} (${company.id})`);
     console.log(`[Sync] Conexão Tiny: ${connection.accountName ?? connection.accountId ?? "unknown"}`);
 
-    try {
-      const stats = await syncByModule(company.id, connection);
+    // Verificar timeout global
+    if (Date.now() - syncStartTime > SYNC_TIMEOUT_MS) {
+      console.error(`[Sync] TIMEOUT GLOBAL - sync excedeu ${SYNC_TIMEOUT_MS/1000}s`);
+      await finishRun(
+        run.id,
+        SyncStatus.FAILED,
+        [],
+        `Timeout global - sync excedeu ${SYNC_TIMEOUT_MS/1000}s`
+      );
+      results.push({
+        companyId: company.id,
+        companyName: company.name,
+        status: "failed",
+        error: "Timeout global",
+      });
+      continue;
+    }    try {
+      const stats = await syncByModule(
+        company.id,
+        connection,
+        options.modules ?? ALL_MODULES,
+        {
+          startDate: options.startDate,
+          endDate: options.endDate,
+          isCron: options.isCron,
+        }
+      );
       const hasErrors = stats.some((s) => s.errors && s.errors.length > 0);
       const totalProcessed = stats.reduce((sum, s) => sum + s.processed, 0);
 
@@ -691,9 +1035,7 @@ export async function runSync(options: SyncOptions) {
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Falha desconhecida";
-      const errorStack = err instanceof Error ? err.stack : undefined;
-
-      console.error(`[Sync] Erro crítico para ${company.name}:`, errorMessage);
+      const errorStack = err instanceof Error ? err.stack : undefined;console.error(`[Sync] Erro crítico para ${company.name}:`, errorMessage);
       if (errorStack) {
         console.error("[Sync] Stack:", errorStack.split("\n").slice(0, 5).join("\n"));
       }

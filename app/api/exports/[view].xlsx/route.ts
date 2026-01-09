@@ -52,6 +52,11 @@ export async function GET(
   };
 
   const rows = await fetchRowsForExport(view, filters);
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/exports/[view].xlsx/route.ts',message:'Exportação XLSX',data:{view,totalRows:rows.length,companyId,filters},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_EXPORT_XLSX'})}).catch(()=>{});
+  // #endregion
+  
   const buffer = await buildXlsx(view, rows);
 
   await prisma.auditLog.create({

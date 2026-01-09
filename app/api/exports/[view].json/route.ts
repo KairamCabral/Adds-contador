@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-
 import { auth } from "@/auth";
 import { reports, ReportView } from "@/app/relatorios/config";
-import { buildCsv } from "@/exports/csv";
+import { buildJson } from "@/exports/json";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { Role } from "@prisma/client";
+import { RoleAssignment } from "@/types/next-auth";
 
 import { fetchRowsForExport } from "../utils";
 
 const unauthorized = () =>
   NextResponse.json({ error: "Não autorizado" }, { status: 403 });
 
-export async function GET(
-  request: NextRequest,
-  // Next 16: tipo de params para segment com extensão ([view].csv) vira `{}`; ignoramos e extraímos do pathname
-) {
-  const match = request.nextUrl.pathname.match(/\/api\/exports\/(.+)\.csv$/);
-  const view = (match?.[1] ?? "") as ReportView;
+export async function GET(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const view = pathname.split("/").pop()?.split(".")[0] as ReportView;
+
   if (!reports[view]) {
     return NextResponse.json({ error: "View inválida" }, { status: 404 });
   }
@@ -37,8 +35,7 @@ export async function GET(
     );
   }
 
-  const companies = session.user.companies as Array<{ companyId: string }>;
-  if (!companies.some((c) => c.companyId === companyId)) {
+  if (!(session.user.companies as RoleAssignment[]).some((c) => c.companyId === companyId)) {
     return unauthorized();
   }
 
@@ -52,22 +49,27 @@ export async function GET(
   };
 
   const rows = await fetchRowsForExport(view, filters);
-  const buffer = await buildCsv(view, rows);
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/exports/[view].json/route.ts',message:'Exportação JSON',data:{view,totalRows:rows.length,companyId,filters},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H_EXPORT_JSON'})}).catch(()=>{});
+  // #endregion
+  
+  const buffer = await buildJson(view, rows);
 
   await prisma.auditLog.create({
     data: {
       actorUserId: session.user.id,
       companyId,
       action: "EXPORT",
-      metadata: { view, filters },
+      metadata: { view, format: "JSON", filters },
     },
   });
 
   return new NextResponse(buffer, {
     status: 200,
     headers: {
-      "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename=\"${view}.csv\"`,
+      "Content-Type": "application/json",
+      "Content-Disposition": `attachment; filename="${view}.json"`,
     },
   });
 }

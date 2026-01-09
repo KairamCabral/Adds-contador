@@ -9,10 +9,10 @@ import { TinyConnection, Prisma } from "@prisma/client";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { refreshAccessToken, TinyTokenResponse } from "./oauth";
 
-// URL base da API Tiny V3 (Swagger: https://api.tiny.com.br/public-api/v3/swagger)
+// URL base da API Tiny V3 (Tiny agora é Olist)
 const API_BASE =
   process.env.TINY_API_BASE?.replace(/\/$/, "") ??
-  "https://api.tiny.com.br/public-api/v3";
+  "https://erp.tiny.com.br/public-api/v3";
 
 const EXPIRY_BUFFER_MS = 60 * 1000; // renovar 1 min antes
 
@@ -112,8 +112,7 @@ export async function tinyRequest<T = unknown>({
   method = "GET",
   body,
   query,
-}: TinyRequestOptions): Promise<T> {
-  const startTime = Date.now();
+}: TinyRequestOptions): Promise<T> {const startTime = Date.now();
   const { accessToken } = await ensureAccessToken(connection);
   const url = buildUrl(path, query);
 
@@ -121,19 +120,31 @@ export async function tinyRequest<T = unknown>({
   const logEndpoint = url.replace(/access_token=[^&]+/, "access_token=***");
   console.log(`[Tiny API] ${method} ${logEndpoint}`);
 
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  // Timeout de 30 segundos por request
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  const timeMs = Date.now() - startTime;
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {throw new Error(`Timeout na requisição para ${path} (> 30s)`);
+    }
+    throw err;
+  }
 
-  // Log de resposta
+  const timeMs = Date.now() - startTime;// Log de resposta
   console.log(`[Tiny API] ${method} ${path} → ${response.status} (${timeMs}ms)`);
 
   if (response.status === 401) {
@@ -169,8 +180,7 @@ export async function tinyRequest<T = unknown>({
 
   if (!response.ok) {
     const text = await response.text();
-    console.error(`[Tiny API] Erro: ${response.status} - ${text.substring(0, 200)}`);
-    throw new Error(`Tiny API erro ${response.status}: ${text}`);
+    console.error(`[Tiny API] Erro: ${response.status} - ${text.substring(0, 200)}`);throw new Error(`Tiny API erro ${response.status}: ${text}`);
   }
 
   if (response.status === 204) {

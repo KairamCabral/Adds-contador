@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { Role } from "@prisma/client";
 
 import { ConnectTinyButton } from "./connect-button";
+import { LogoutButton } from "@/components/logout-button";
+import Link from "next/link";
 
 async function createCompany(formData: FormData) {
   "use server";
@@ -52,6 +54,15 @@ export default async function ConexoesTinyPage() {
             <p className="text-sm text-slate-400">
               Conecte empresas via OAuth2 para sincronizar dados.
             </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/relatorios/vw_vendas"
+              className="rounded-lg border border-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-900"
+            >
+              ← Relatórios
+            </Link>
+            <LogoutButton />
           </div>
         </header>
 

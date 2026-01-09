@@ -74,6 +74,12 @@ async function fetchVendas(
   config: ReportConfig,
 ): Promise<ReportResult<VwVendas>> {
   const where = buildWhere(config, filters) as Prisma.VwVendasWhereInput;
+  
+  // Excluir pedidos "Em aberto" (conforme solicitação do usuário)
+  where.status = {
+    not: "Em aberto",
+  };
+  
   const { take, skip, page, pageSize } = paginate(filters.page, filters.pageSize);
 
   const [items, total] = await Promise.all([
