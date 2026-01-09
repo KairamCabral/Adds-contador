@@ -167,7 +167,7 @@ export async function listAllPedidos(
     } else {
       hasMore = false;
     }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // #region agent log
       fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/tiny/api.ts:172',message:'listPedidos page error',data:{pagina,errorMsg:error?.message,errorStack:error?.stack?.split('\n').slice(0,2).join('\n')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
       // #endregion

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { reports, ReportView } from "@/app/relatorios/config";
+import { ReportView } from "@/app/relatorios/config";
 
 export function ReportTabs() {
   const pathname = usePathname();
@@ -38,7 +38,6 @@ export function ReportTabs() {
       <nav className="flex gap-1 overflow-x-auto">
         {tabs.map((tab) => {
           const isActive = currentView === tab.view;
-          const config = reports[tab.view];
           
           return (
             <Link

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     where: { companyId },
     select: {
       id: true,
-      connectedAt: true,
+      createdAt: true,
       expiresAt: true,
     },
   });
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     connected: true,
     companyId,
     connectionId: connection.id,
-    connectedAt: connection.connectedAt,
+    connectedAt: connection.createdAt,
     expiresAt: expiresAt,
     isExpiringSoon,
   });

@@ -54,9 +54,11 @@ export async function POST(request: NextRequest) {
     // #endregion
 
     return NextResponse.json({ ok: true, runIds: result.runIds });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:50',message:'runSync error caught',data:{errorMsg:error?.message,errorStack:error?.stack},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ALL'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7243/ingest/65d1d0bb-d98f-4763-a66c-cbc2a12cadad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/admin/sync/route.ts:50',message:'runSync error caught',data:{errorMsg:errorMessage,errorStack},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ALL'})}).catch(()=>{});
     // #endregion
     throw error;
   }

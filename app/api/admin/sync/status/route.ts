@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       status: true,
       startedAt: true,
       finishedAt: true,
-      statsJson: true,
+      stats: true,
     },
   });
 

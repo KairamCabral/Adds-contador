@@ -31,7 +31,7 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
       const timeoutId = setTimeout(() => controller.abort(), 780000);
 
       let endpoint = "/api/admin/sync";
-      let body: any = { companyId };
+      let body: Record<string, unknown> = { companyId };
 
       if (syncMode === "month" && selectedMonth) {
         const [year, month] = selectedMonth.split("-").map(Number);

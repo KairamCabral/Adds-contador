@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 /**
  * Converte para Decimal string, NUNCA NaN
  */
-export function toDecimal(value: any): string | null {
+export function toDecimal(value: unknown): string | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -46,7 +46,7 @@ export function toDecimal(value: any): string | null {
 /**
  * Converte para Prisma.Decimal, com fallback para 0
  */
-export function toPrismaDecimal(value: any, fallback: number = 0): Prisma.Decimal {
+export function toPrismaDecimal(value: unknown, fallback: number = 0): Prisma.Decimal {
   const decimal = toDecimal(value);
   return new Prisma.Decimal(decimal ?? fallback.toString());
 }
@@ -54,7 +54,7 @@ export function toPrismaDecimal(value: any, fallback: number = 0): Prisma.Decima
 /**
  * Converte para inteiro
  */
-export function toInt(value: any): number | null {
+export function toInt(value: unknown): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -74,7 +74,7 @@ export function toInt(value: any): number | null {
 /**
  * Converte para Date, aceita múltiplos formatos
  */
-export function toDate(value: any): Date | null {
+export function toDate(value: unknown): Date | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -107,7 +107,7 @@ export function toDate(value: any): Date | null {
 /**
  * Retorna o primeiro valor não vazio
  */
-export function pickFirst(...values: any[]): string {
+export function pickFirst(...values: unknown[]): string {
   for (const val of values) {
     if (val !== null && val !== undefined && val !== "") {
       return String(val).trim();
@@ -119,7 +119,7 @@ export function pickFirst(...values: any[]): string {
 /**
  * Texto seguro (trim, nunca undefined)
  */
-export function safeText(value: any, fallback: string = "-"): string {
+export function safeText(value: unknown, fallback: string = "-"): string {
   if (value === null || value === undefined) {
     return fallback;
   }
@@ -130,7 +130,7 @@ export function safeText(value: any, fallback: string = "-"): string {
  * Extrai valor de objeto aninhado de forma segura
  * Ex: safeGet(obj, "cliente.cpfCnpj") ou safeGet(obj, ["cliente", "cpfCnpj"])
  */
-export function safeGet(obj: any, path: string | string[]): any {
+export function safeGet(obj: unknown, path: string | string[]): unknown {
   if (!obj) return undefined;
 
   const keys = Array.isArray(path) ? path : path.split(".");

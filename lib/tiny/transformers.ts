@@ -7,9 +7,7 @@ import { Prisma } from "@prisma/client";
 import {
   TinyPedidoResumo,
   TinyPedidoItem,
-  TinyContaReceber,
-  TinyContaPagar,
-} from "./types";
+  } from "./types";
 import {
   toDecimal,
   toPrismaDecimal,
@@ -62,8 +60,8 @@ const mapSituacao = (codigo: number | string): string => {
  */
 export function transformPedidoDetalheToVendas(
   companyId: string,
-  detalhe: any,
-  enrichData?: { produtos?: Map<number, any> }
+  detalhe: unknown,
+  enrichData?: { produtos?: Map<number, unknown> }
 ): VwVendasInput[] {
   // Extração segura de campos aninhados
   // #region agent log
@@ -123,7 +121,7 @@ export function transformPedidoDetalheToVendas(
     ];
   }
 
-  return itens.map((item: any, idx: number) => {
+  return itens.map((item: unknown, idx: number) => {
     const quantidade = toPrismaDecimal(item.quantidade, 0);
     const valorUnitario = toPrismaDecimal(item.valorUnitario, 0);
     
@@ -266,7 +264,7 @@ export type VwContasReceberPosicaoInput =
  */
 export function transformContaReceberToPosicao(
   companyId: string,
-  conta: any,
+  conta: unknown,
   dataPosicao: Date = new Date()
 ): VwContasReceberPosicaoInput {
   // Extração segura de campos aninhados
@@ -303,7 +301,7 @@ export type VwContasPagarInput = Prisma.VwContasPagarCreateInput;
  */
 export function transformContaPagarToView(
   companyId: string,
-  conta: any
+  conta: unknown
 ): VwContasPagarInput {
   // Extração segura de campos aninhados
   const fornecedor = safeText(safeGet(conta, ["fornecedor", "nome"]));
@@ -339,7 +337,7 @@ export type VwContasPagasInput = Prisma.VwContasPagasCreateInput;
  */
 export function transformContaPagaToView(
   companyId: string,
-  conta: any
+  conta: unknown
 ): VwContasPagasInput | null {
   // Só processa se está pago
   if (conta.situacao !== "pago") {
@@ -382,7 +380,7 @@ export type VwContasRecebidasInput = Prisma.VwContasRecebidasCreateInput;
  */
 export function transformContaRecebidaToView(
   companyId: string,
-  conta: any
+  conta: unknown
 ): VwContasRecebidasInput | null {
   // Só processa se está pago/recebido
   if (conta.situacao !== "pago") {
@@ -429,9 +427,9 @@ export type VwEstoqueInput = Prisma.VwEstoqueCreateInput;
  */
 export function transformProdutoToEstoque(
   companyId: string,
-  produto: any,
+  produto: unknown,
   dataReferencia: Date
-): any {
+): unknown {
   const produtoNome = safeText(pickFirst(produto.descricao, produto.nome, `Produto ${produto.id}`));
   const categoriaNome = safeText(safeGet(produto, ["categoria", "nome"]));
   const unidade = safeText(produto.unidade || "UN");

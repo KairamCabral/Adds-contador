@@ -79,7 +79,7 @@ export async function getProduto(
   }
 
   try {
-    const response = await tinyRequest<any>({
+    const response = await tinyRequest<unknown>({
       connection,
       path: `/produtos/${produtoId}`,
     });
@@ -123,7 +123,7 @@ export async function getPessoa(
   }
 
   try {
-    const response = await tinyRequest<any>({
+    const response = await tinyRequest<unknown>({
       connection,
       path: `/contatos/${pessoaId}`,
     });
@@ -160,7 +160,7 @@ export async function getCategoria(
   }
 
   try {
-    const response = await tinyRequest<any>({
+    const response = await tinyRequest<unknown>({
       connection,
       path: `/categorias/${categoriaId}`,
     });

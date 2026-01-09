@@ -60,10 +60,11 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ ok: true, runIds: result.runIds });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro ao sincronizar";
     console.error("[Sync Period] Erro:", error);
     return NextResponse.json(
-      { error: error?.message ?? "Erro ao sincronizar" },
+      { error: errorMessage },
       { status: 500 }
     );
   }

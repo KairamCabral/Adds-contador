@@ -7,7 +7,7 @@ const DEBUG_ENABLED = process.env.DEBUG_TINY === "1";
 /**
  * Mascara dados sensíveis (CPF, CNPJ, email, telefone)
  */
-export function sanitizePII(obj: any): any {
+export function sanitizePII(obj: unknown): unknown {
   if (!obj) return obj;
   if (typeof obj !== "object") return obj;
 
@@ -55,7 +55,7 @@ export function sanitizePII(obj: any): any {
 /**
  * Log de debug com sanitização automática
  */
-export function debugLog(module: string, message: string, data?: any) {
+export function debugLog(module: string, message: string, data?: unknown) {
   if (!DEBUG_ENABLED) return;
 
   const sanitizedData = data ? sanitizePII(data) : undefined;
@@ -71,8 +71,8 @@ export function debugLog(module: string, message: string, data?: any) {
  */
 export function debugMapping(
   module: string,
-  original: any,
-  transformed: any,
+  original: unknown,
+  transformed: unknown,
   index: number = 0
 ) {
   if (!DEBUG_ENABLED || index > 0) return; // Só primeiro item
@@ -89,7 +89,7 @@ export function debugMapping(
 /**
  * Log de warning para valores suspeitos
  */
-export function debugWarn(module: string, field: string, value: any, path: string) {
+export function debugWarn(module: string, field: string, value: unknown, path: string) {
   if (!DEBUG_ENABLED) return;
 
   if (value === undefined || Number.isNaN(value) || value === "NaN") {

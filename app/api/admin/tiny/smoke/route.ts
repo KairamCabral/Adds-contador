@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
     company: { id: companyId },
     connection: { 
       id: connection.id, 
-      connectedAt: connection.connectedAt 
+      connectedAt: connection.createdAt 
     },
     tests: results,
     summary: {

@@ -33,7 +33,7 @@ export function SyncControls({ companyId, lastSync }: Props) {
       const timeoutId = setTimeout(() => controller.abort(), 780000); // 13min
 
       let endpoint = "/api/admin/sync";
-      let body: any = { companyId };
+      let body: Record<string, unknown> = { companyId };
 
       if (mode === "month" && selectedMonth) {
         // Sincronizar mês específico
@@ -83,12 +83,6 @@ export function SyncControls({ companyId, lastSync }: Props) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getMonthName = (monthStr: string) => {
-    const [year, month] = monthStr.split("-");
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   };
 
   return (

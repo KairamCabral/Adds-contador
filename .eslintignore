@@ -1,0 +1,7 @@
+# Scripts de manutenção (Node.js commonjs)
+scripts/
+*.sql
+*.md
+.cursor/
+docs/
+
