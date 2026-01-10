@@ -90,6 +90,7 @@ export async function fetchReportCursor<T>(
   const where = buildWhere(config, filters);
   
   const modelName = view.replace('vw_', 'vw');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const model = (prisma as any)[modelName];
   
   if (!model) {

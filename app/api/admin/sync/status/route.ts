@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       syncStats = typeof lastSync.stats === 'string' 
         ? JSON.parse(lastSync.stats) 
         : lastSync.stats;
-    } catch (e) {
+    } catch {
       // Ignorar erro de parse
     }
   }

@@ -27,6 +27,7 @@ export async function measurePerformance<T>(
 /**
  * Debounce para otimizar chamadas frequentes
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
@@ -47,6 +48,7 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Throttle para limitar taxa de execução
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function throttle<T extends (...args: any[]) => any>(
   func: T,
   limit: number
