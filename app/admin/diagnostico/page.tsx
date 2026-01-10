@@ -297,13 +297,13 @@ export default function DiagnosticoPage() {
           </h3>
           <div className="text-sm text-gray-300 space-y-2">
             <p>
-              <strong>1. Erro "Invalid parameter: redirect_uri":</strong>
+              <strong>1. Erro &quot;Invalid parameter: redirect_uri&quot;:</strong>
             </p>
             <ul className="list-disc list-inside ml-4 space-y-1 text-gray-400">
-              <li>Copie o "Valor esperado" acima</li>
+              <li>Copie o &quot;Valor esperado&quot; acima</li>
               <li>
-                Acesse o painel do Tiny ERP e adicione esta URL em "Redirect
-                URIs"
+                Acesse o painel do Tiny ERP e adicione esta URL em &quot;Redirect
+                URIs&quot;
               </li>
               <li>Atualize TINY_REDIRECT_URI na Vercel com o mesmo valor</li>
               <li>Faça Redeploy se alterou na Vercel</li>

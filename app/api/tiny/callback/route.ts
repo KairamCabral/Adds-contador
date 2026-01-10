@@ -20,9 +20,6 @@ const errorRedirect = (req: NextRequest, message: string) =>
     ),
   );
 
-const errorResponse = (message: string, status = 400) =>
-  NextResponse.json({ error: message }, { status });
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
