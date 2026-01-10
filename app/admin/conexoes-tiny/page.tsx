@@ -32,11 +32,14 @@ async function createCompany(formData: FormData) {
 export default async function ConexoesTinyPage({
   searchParams,
 }: {
-  searchParams: { status?: string; message?: string; companyId?: string };
+  searchParams: Promise<{ status?: string; message?: string; companyId?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!userHasRole(session, [Role.ADMIN])) redirect("/login");
+
+  // No Next.js 15, searchParams é Promise
+  const params = await searchParams;
 
   const companies = await prisma.company.findMany({
     orderBy: { createdAt: "desc" },
@@ -71,7 +74,7 @@ export default async function ConexoesTinyPage({
         </header>
 
         {/* Mensagens de status */}
-        {searchParams.status === "connected" && (
+        {params.status === "connected" && (
           <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
             <div className="flex items-center gap-2">
               <span className="text-xl">✅</span>
@@ -85,14 +88,14 @@ export default async function ConexoesTinyPage({
           </div>
         )}
 
-        {searchParams.status === "error" && searchParams.message && (
+        {params.status === "error" && params.message && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
             <div className="flex items-start gap-2">
               <span className="text-xl">❌</span>
               <div className="flex-1">
                 <p className="font-semibold text-red-400">Erro ao conectar</p>
                 <p className="text-sm text-red-300/80 mt-1">
-                  {decodeURIComponent(searchParams.message)}
+                  {decodeURIComponent(params.message)}
                 </p>
                 <details className="mt-2">
                   <summary className="text-xs text-red-400/60 cursor-pointer hover:text-red-400">
