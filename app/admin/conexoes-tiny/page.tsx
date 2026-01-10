@@ -176,7 +176,10 @@ export default async function ConexoesTinyPage({
                             : "Nunca sincronizado"}
                         </td>
                         <td className="px-4 py-3">
-                          <ConnectTinyButton companyId={company.id} />
+                          <ConnectTinyButton 
+                            companyId={company.id} 
+                            isConnected={!!connection}
+                          />
                         </td>
                       </tr>
                     );
