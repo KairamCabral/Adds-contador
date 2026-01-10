@@ -158,8 +158,14 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         };
       } else if (syncMode === "month" && selectedMonth) {
         const [year, month] = selectedMonth.split("-").map(Number);
-        const startDate = new Date(year, month - 1, 1); // Primeiro dia do mês
-        const endDate = new Date(year, month, 0, 23, 59, 59, 999); // Último dia do mês às 23:59:59.999
+        
+        // Criar datas em UTC para evitar problemas de timezone
+        // Primeiro dia do mês às 00:00:00.000 UTC
+        const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+        
+        // Último dia do mês às 23:59:59.999 UTC
+        const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        const endDate = new Date(Date.UTC(year, month - 1, lastDayOfMonth, 23, 59, 59, 999));
 
         endpoint = "/api/admin/sync/period";
         body = {

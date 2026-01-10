@@ -787,9 +787,7 @@ const syncContasRecebidas = async (
 ): Promise<ModuleResult> => {
   const module = "vw_contas_recebidas";
   const errors: string[] = [];
-  let processed = 0;
-
-  try {
+  let processed = 0;try {
     const cursor = await getSyncCursor(companyId, module);
     const now = new Date();
     
@@ -807,24 +805,18 @@ const syncContasRecebidas = async (
       dataInicial = cursor?.lastSyncedAt
         ? new Date(cursor.lastSyncedAt.getTime() - incrementalDays * 24 * 60 * 60 * 1000)
         : new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-    }
-
-    // Buscar contas recebidas
+    }// Buscar contas recebidas
     let contas = await listAllContasReceber(
       connection,
       dataInicial,
       dataFinal,
       "pago"
-    );
-    
-    // Limitar em modo dev
+    );// Limitar em modo dev
     const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
     if (isDevMode && contas.length > 10) {
       console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
       contas = contas.slice(0, 10);
-    }
-    
-    console.log(`[Sync ${module}] Encontradas ${contas.length} contas recebidas. Buscando detalhes para enriquecer categorias...`);
+    }console.log(`[Sync ${module}] Encontradas ${contas.length} contas recebidas. Buscando detalhes para enriquecer categorias...`);
     
     // ENRICHMENT: Buscar detalhe de cada conta para obter categoria e outros campos completos
     const contasEnriquecidas: (unknown | null)[] = [];
@@ -1128,12 +1120,8 @@ const syncByModule = async (
   modules: SyncModule[] = ALL_MODULES,
   options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult[]> => {
-  const results: ModuleResult[] = [];
-
-  for (const mod of modules) {
-    console.log(`[Sync] Iniciando ${mod} para company ${companyId}`);
-
-    let result: ModuleResult;
+  const results: ModuleResult[] = [];for (const mod of modules) {
+    console.log(`[Sync] Iniciando ${mod} para company ${companyId}`);let result: ModuleResult;
 
     switch (mod) {
       case "vw_vendas":
@@ -1163,10 +1151,7 @@ const syncByModule = async (
       `[Sync] Finalizado ${mod}: ${result.processed} registros${
         result.errors?.length ? `, ${result.errors.length} erros` : ""
       }`
-    );
-  }
-
-  return results;
+    );}return results;
 };
 
 // ============================================
@@ -1247,7 +1232,7 @@ export async function runSync(options: SyncOptions) {
         error: "Timeout global",
       });
       continue;
-    }    try {
+    }try {
       const stats = await syncByModule(
         company.id,
         connection,
