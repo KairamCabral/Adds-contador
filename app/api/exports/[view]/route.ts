@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { reports, ReportView } from "@/app/relatorios/config";
-import { buildXlsx } from "@/exports/xlsx";
-import { buildJson } from "@/exports/json";
 import { userHasRole } from "@/lib/authz";
 import { prisma } from "@/lib/db";
 import { Role } from "@prisma/client";
 import { RoleAssignment } from "@/types/next-auth";
 
 import { fetchRowsForExport } from "../utils";
+
+// Lazy load heavy export libraries (500KB+ for ExcelJS)
+const buildXlsx = async (...args: Parameters<typeof import("@/exports/xlsx").buildXlsx>) => {
+  const { buildXlsx: build } = await import("@/exports/xlsx");
+  return build(...args);
+};
+
+const buildJson = async (...args: Parameters<typeof import("@/exports/json").buildJson>) => {
+  const { buildJson: build } = await import("@/exports/json");
+  return build(...args);
+};
 
 const unauthorized = () =>
   NextResponse.json({ error: "Não autorizado" }, { status: 403 });

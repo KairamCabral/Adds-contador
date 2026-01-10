@@ -34,11 +34,15 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
   const [progress, setProgress] = useState(0);
   const router = useRouter();
 
-  // Polling para verificar se a sync terminou
+  // Polling inteligente com exponential backoff
   useEffect(() => {
     if (!loading) return;
 
     let completedOnce = false;
+    let attempts = 0;
+    let currentInterval = 2000; // Começar com 2s
+    let timeoutId: NodeJS.Timeout;
+    let intervalId: NodeJS.Timeout;
 
     const checkSyncStatus = async () => {
       try {
@@ -76,6 +80,10 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
                 showToast.error("❌ Falha na sincronização. Tente novamente.");
               }
               
+              // Limpar timers
+              clearTimeout(timeoutId);
+              clearTimeout(intervalId);
+              
               // Aguardar animação e atualizar
               setTimeout(() => {
                 setLoading(false);
@@ -84,18 +92,28 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
                 router.refresh();
               }, 1000);
             }
+            return;
           }
+          
+          // Exponential backoff após 5 tentativas
+          attempts++;
+          if (attempts > 5 && currentInterval < 10000) {
+            currentInterval = Math.min(currentInterval * 1.5, 10000); // Max 10s
+          }
+          
+          // Agendar próxima verificação
+          intervalId = setTimeout(checkSyncStatus, currentInterval);
         }
       } catch (err) {
         console.error("Error checking sync status:", err);
+        // Retry com backoff mesmo em erro
+        intervalId = setTimeout(checkSyncStatus, currentInterval);
       }
     };
-
-    // Verificar a cada 2 segundos para feedback mais rápido
-    const interval = setInterval(checkSyncStatus, 2000);
     
     // Timeout máximo de 13 minutos
-    const timeout = setTimeout(() => {
+    timeoutId = setTimeout(() => {
+      clearTimeout(intervalId);
       setLoading(false);
       setSyncStats(null);
       setProgress(0);
@@ -103,9 +121,12 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
       router.refresh();
     }, 780000);
 
+    // Iniciar polling
+    checkSyncStatus();
+
     return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
+      clearTimeout(intervalId);
     };
   }, [loading, companyId, router]);
 

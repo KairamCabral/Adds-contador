@@ -80,6 +80,44 @@ const paginate = (page?: number, pageSize = 20) => {
   return { take, skip, page: safePage, pageSize: take };
 };
 
+// Cursor-based pagination para grandes datasets (mais performático que offset)
+export async function fetchReportCursor<T>(
+  view: ReportView,
+  filters: ReportFilters & { cursor?: string }
+): Promise<{ items: T[]; nextCursor?: string; total: number }> {
+  const config = reports[view];
+  const pageSize = filters.pageSize || 20;
+  const where = buildWhere(config, filters);
+  
+  const modelName = view.replace('vw_', 'vw');
+  const model = (prisma as any)[modelName];
+  
+  if (!model) {
+    throw new Error(`Model ${modelName} not found`);
+  }
+  
+  const [items, total] = await Promise.all([
+    model.findMany({
+      where,
+      take: pageSize + 1, // +1 para verificar se há próxima página
+      ...(filters.cursor && {
+        cursor: { id: filters.cursor },
+        skip: 1, // Pular o cursor
+      }),
+      orderBy: { id: 'desc' },
+    }),
+    model.count({ where }),
+  ]);
+  
+  let nextCursor: string | undefined;
+  if (items.length > pageSize) {
+    const nextItem = items.pop();
+    nextCursor = nextItem?.id;
+  }
+  
+  return { items, nextCursor, total };
+}
+
 async function fetchVendas(
   filters: ReportFilters,
   config: ReportConfig,

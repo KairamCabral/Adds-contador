@@ -13,6 +13,7 @@ import {
   getPedido,
   listAllEstoque,
   getContaPagarDetalhe,
+  getContaReceberDetalhe,
 } from "@/lib/tiny/api";
 import type { TinyPedidoDetalhe } from "@/lib/tiny/types";
 import {
@@ -678,13 +679,37 @@ const syncContasPagas = async (
       contas = contas.slice(0, 10);
     }
     
-    console.log(`[Sync ${module}] Processando ${contas.length} contas pagas`);
+    console.log(`[Sync ${module}] Encontradas ${contas.length} contas pagas. Buscando detalhes para enriquecer...`);
+    
+    // ENRICHMENT: Buscar detalhe de cada conta para obter categoria e formaPagamento
+    const contasEnriquecidas: (unknown | null)[] = [];
+    for (let i = 0; i < contas.length; i++) {
+      const conta = contas[i];
+      const contaId = (conta as { id: number }).id;
+      
+      // Delay progressivo para evitar rate limit
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 300 + (i * 50)));
+      }
+      
+      try {
+        const detalheConta = await getContaPagarDetalhe(connection, contaId);
+        contasEnriquecidas.push(detalheConta);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Sync] Falha ao buscar detalhe da conta ${contaId}: ${msg.substring(0, 200)}`);
+        contasEnriquecidas.push(conta); // Fallback to list data
+      }
+    }
+
+    console.log(`[Sync ${module}] Detalhes obtidos. Transformando ${contasEnriquecidas.length} contas...`);
     
     const titulosProcessados: bigint[] = [];
     
-    for (const conta of contas) {
+    for (const contaEnriquecida of contasEnriquecidas) {
+      if (!contaEnriquecida) continue;
       try {
-        const contaView = transformContaPagaToView(companyId, conta);
+        const contaView = transformContaPagaToView(companyId, contaEnriquecida);
         if (!contaView) continue;
 
         await prisma.vwContasPagas.upsert({
@@ -713,7 +738,8 @@ const syncContasPagas = async (
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Conta ${conta.id}: ${msg}`);
+        const contaId = (contaEnriquecida as { id?: number })?.id || 'unknown';
+        errors.push(`Conta ${contaId}: ${msg}`);
       }
     }
 
@@ -792,13 +818,42 @@ const syncContasRecebidas = async (
       contas = contas.slice(0, 10);
     }
     
-    console.log(`[Sync ${module}] Processando ${contas.length} contas recebidas`);
+    console.log(`[Sync ${module}] Encontradas ${contas.length} contas recebidas. Buscando detalhes para enriquecer categorias...`);
+    
+    // ENRICHMENT: Buscar detalhe de cada conta para obter categoria e outros campos completos
+    const contasEnriquecidas: (unknown | null)[] = [];
+    for (let i = 0; i < contas.length; i++) {
+      const conta = contas[i];
+      const contaId = (conta as { id: number }).id;
+      
+      // Delay progressivo para evitar rate limit (300ms base + 50ms por conta)
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 300 + (i * 50)));
+      }
+      
+      try {
+        const detalheConta = await getContaReceberDetalhe(connection, contaId);
+        contasEnriquecidas.push(detalheConta);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Sync] Falha ao buscar detalhe da conta ${contaId}: ${msg.substring(0, 200)}`);
+        // Usar dados da lista como fallback
+        contasEnriquecidas.push(conta);
+      }
+    }
+    
+    console.log(`[Sync ${module}] Detalhes obtidos. Transformando ${contasEnriquecidas.length} contas...`);
     
     const titulosProcessados: bigint[] = [];
     
-    for (const conta of contas) {
+    for (const contaEnriquecida of contasEnriquecidas) {
+      if (!contaEnriquecida) {
+        errors.push("Conta detalhe não encontrada para enriquecimento.");
+        continue;
+      }
+      
       try {
-        const contaView = transformContaRecebidaToView(companyId, conta);
+        const contaView = transformContaRecebidaToView(companyId, contaEnriquecida);
         if (!contaView) continue;
 
         await prisma.vwContasRecebidas.upsert({

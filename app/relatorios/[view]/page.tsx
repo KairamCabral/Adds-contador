@@ -1,8 +1,9 @@
 import React from "react";
 import { notFound, redirect } from "next/navigation";
+import Image from "next/image";
 
 import { auth } from "@/auth";
-import { SyncControlsInline } from "@/components/sync-controls-inline";
+import SyncControlsInline from "@/components/sync-controls-lazy";
 import { LogoutButton } from "@/components/logout-button";
 import { ReportTabs } from "@/components/report-tabs";
 import { SyncEmptyState } from "@/components/sync-empty-state";
@@ -151,9 +152,12 @@ export default async function ReportPage({
               {/* Info do Relatório */}
               <div className="flex items-center gap-6">
                 {/* Logo */}
-                <img 
+                <Image 
                   src="/Logo-cor-adds.webp" 
-                  alt="ADDS" 
+                  alt="ADDS"
+                  width={120}
+                  height={32}
+                  priority
                   className="h-8 w-auto"
                 />
                 

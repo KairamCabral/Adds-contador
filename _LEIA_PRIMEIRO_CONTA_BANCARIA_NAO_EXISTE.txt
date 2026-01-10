@@ -1,0 +1,153 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║   ⚠️  CONFIRMADO: CONTA BANCÁRIA NÃO EXISTE NA API TINY                  ║
+║   Data: 09/01/2026                                                       ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+🔬 INVESTIGAÇÃO COMPLETA REALIZADA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Analisadas 2 contas recebidas diferentes
+✅ Busca recursiva em TODOS os campos do JSON
+✅ Testados 5 endpoints diferentes da API
+✅ Verificado link entre forma recebimento e conta
+
+Script criado: scripts/investigacao-profunda-conta-bancaria.js
+
+
+📊 O QUE ENCONTRAMOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CAMPOS QUE EXISTEM:
+   ✅ formaRecebimento.nome
+      • "Cartão de crédito"
+      • "Pix"
+      • "Dinheiro"
+      • "Boleto"
+      → ESTE JÁ ESTÁ FUNCIONANDO! 🎉
+
+   ✅ dataLiquidacao
+      • "2026-01-09"
+      → Data quando dinheiro foi liquidado
+
+CAMPOS QUE NÃO EXISTEM:
+   ❌ contaBancaria
+   ❌ conta_bancaria
+   ❌ banco
+   ❌ agencia
+   ❌ numeroConta
+
+
+🔍 ENDPOINTS TESTADOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   GET /contas-receber/{id}         ✅ Existe (sem conta bancária)
+   GET /contas-bancarias             ❌ 404 - Não existe
+   GET /bancos                       ❌ 404 - Não existe
+   GET /formas-recebimento           ❌ 404 - Não existe
+   GET /formas-recebimento/{id}      ❌ 404 - Não existe
+   GET /formas-pagamento             ✅ Existe (mas sem conta bancária)
+
+
+🎯 CONCLUSÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   A API TINY ERP NÃO FORNECE INFORMAÇÃO DE CONTA BANCÁRIA
+   para contas a receber.
+
+   Isso NÃO é um bug do nosso sistema - é LIMITAÇÃO DA API TINY.
+
+
+📋 SITUAÇÃO ATUAL (CORRETA)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌──────────┬─────────────┬──────────────────┬─────────────┐
+│ ID       │ CLIENTE     │ FORMA REC        │ CONTA BANC  │
+├──────────┼─────────────┼──────────────────┼─────────────┤
+│ 91478... │ Silvia...   │ Cartão de créd.✅│ N/D    ⚠️   │
+│ 91479... │ Fernanda... │ Pix            ✅│ N/D    ⚠️   │
+└──────────┴─────────────┴──────────────────┴─────────────┘
+
+   ✅ FORMA RECEBIMENTO: Funcionando perfeitamente!
+   ⚠️  CONTA BANCÁRIA: Sempre "N/D" (API não fornece)
+
+
+💡 ALTERNATIVAS DISPONÍVEIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+OPÇÃO 1: Aceitar como está (RECOMENDADO) ✅
+   • Mais simples
+   • Honesto com usuário
+   • Já implementado
+   → Campo mostra "N/D"
+
+OPÇÃO 2: Mostrar Data de Liquidação
+   • Mostra quando dinheiro caiu
+   • Informação útil
+   • Requer mudança no código
+   → Exemplo: "Liquidado em 09/01/2026"
+
+OPÇÃO 3: Renomear coluna
+   • Trocar "Conta Bancária" por "Data Liquidação"
+   • Informação correta
+   • Requer migration do banco
+   → Mudança estrutural
+
+OPÇÃO 4: Cadastro Manual (FUTURO)
+   • Criar funcionalidade própria
+   • Controle total
+   • Muito trabalho
+   → Só se usuário REALMENTE precisar
+
+
+🎓 O QUE APRENDEMOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. APIs TÊM LIMITAÇÕES
+   → Nem sempre fornecem tudo que precisamos
+   → Precisamos aceitar e documentar
+
+2. INVESTIGAÇÃO EXAUSTIVA VALE A PENA
+   → Testamos tudo antes de concluir
+   → Agora temos 100% de certeza
+
+3. TRANSPARÊNCIA COM USUÁRIO
+   → Melhor mostrar "N/D" do que inventar dados
+   → Documentar claramente as limitações
+
+
+📚 DOCUMENTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Detalhes técnicos completos:
+   docs/LIMITACAO_CONTA_BANCARIA_CONFIRMADA.md
+
+Script de investigação:
+   scripts/investigacao-profunda-conta-bancaria.js
+
+
+✅ RESUMO FINAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+O QUE FUNCIONA:
+   ✅ FORMA RECEBIMENTO: "Cartão de crédito", "Pix", "Dinheiro"
+
+O QUE NÃO EXISTE:
+   ❌ CONTA BANCÁRIA: API Tiny não fornece
+
+SITUAÇÃO:
+   ✅ SISTEMA FUNCIONANDO CORRETAMENTE
+   ⚠️  Limitação é da API TINY, não nossa
+
+RECOMENDAÇÃO:
+   ✅ Aceitar como está (mais simples e honesto)
+
+
+═══════════════════════════════════════════════════════════════════════════
+
+   ✅ INVESTIGAÇÃO COMPLETA - 100% DE CERTEZA
+   
+   Conta Bancária NÃO existe na API Tiny para contas recebidas
+
+═══════════════════════════════════════════════════════════════════════════

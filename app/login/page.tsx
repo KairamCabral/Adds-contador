@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { LoginForm } from "./login-form";
 import { redirect } from "next/navigation";
+import Image from "next/image";
 
 export default async function LoginPage() {
   const session = await auth();
@@ -13,9 +14,12 @@ export default async function LoginPage() {
       <div className="w-full max-w-md space-y-8">
         {/* Logo */}
         <div className="flex justify-center">
-          <img 
+          <Image 
             src="/Logo-cor-adds.webp" 
             alt="ADDS" 
+            width={200}
+            height={96}
+            priority
             className="h-24 w-auto"
           />
         </div>

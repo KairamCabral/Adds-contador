@@ -660,31 +660,32 @@ export function transformContaPagaToView(
     return null;
   }
 
-  // Data de pagamento: usar data_pagamento se disponível, senão usar data_vencimento como fallback
-  const dataPagamento = toDate(getFirst(contaObj, ["data_pagamento", "dataPagamento"])) 
+  // Data de pagamento: usar dataLiquidacao primeiro, depois data_pagamento, por último data_vencimento
+  const dataPagamento = toDate(getFirst(contaObj, ["dataLiquidacao", "data_liquidacao", "data_pagamento", "dataPagamento"])) 
     ?? toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) 
     ?? new Date();
 
-  // IMPORTANTE: API Tiny usa "cliente" mesmo para contas a pagar
-  const fornecedorNome = safeGet(contaObj, ["cliente", "nome"]) 
+  // IMPORTANTE: API Tiny usa "cliente" na lista mas "contato" no detalhe
+  const fornecedorNome = safeGet(contaObj, ["contato", "nome"]) 
+    || safeGet(contaObj, ["cliente", "nome"]) 
     || safeGet(contaObj, ["fornecedor", "nome"]) 
     || safeGet(contaObj, ["pessoa", "nome"]);
   const fornecedor = typeof fornecedorNome === 'string' && fornecedorNome.trim() ? fornecedorNome.trim() : "N/D";
   
-  // Categoria
+  // Categoria: API retorna objeto {id, descricao} no detalhe
   const categoriaObj = contaObj.categoria;
-  let categoria: string | null = null;
+  let categoria = "N/D";
   if (typeof categoriaObj === 'object' && categoriaObj) {
-    const catNome = (categoriaObj as { nome?: string; descricao?: string }).nome 
-      || (categoriaObj as { descricao?: string }).descricao;
-    if (typeof catNome === 'string' && catNome.trim()) {
-      categoria = catNome.trim();
+    const catDesc = (categoriaObj as { descricao?: string; nome?: string }).descricao 
+      || (categoriaObj as { nome?: string }).nome;
+    if (typeof catDesc === 'string' && catDesc.trim()) {
+      categoria = catDesc.trim();
     }
   } else if (typeof categoriaObj === 'string' && categoriaObj.trim()) {
     categoria = categoriaObj.trim();
   }
   
-  // Centro de Custo
+  // Centro de Custo: Não existe na API Tiny para contas a pagar (confirmado)
   const centroCustoObj = contaObj.centroCusto || contaObj.centro_custo;
   let centroCusto: string | null = null;
   if (typeof centroCustoObj === 'object' && centroCustoObj) {
@@ -695,6 +696,21 @@ export function transformContaPagaToView(
   } else if (typeof centroCustoObj === 'string' && centroCustoObj.trim()) {
     centroCusto = centroCustoObj.trim();
   }
+
+  // Forma de Pagamento: API retorna objeto {id, nome} no detalhe
+  const formaPagamentoObj = contaObj.formaPagamento || contaObj.forma_pagamento;
+  let formaPagamento = "N/D";
+  if (typeof formaPagamentoObj === 'object' && formaPagamentoObj) {
+    const pagtoNome = (formaPagamentoObj as { nome?: string }).nome;
+    if (typeof pagtoNome === 'string' && pagtoNome.trim()) {
+      formaPagamento = pagtoNome.trim();
+    }
+  } else if (typeof formaPagamentoObj === 'string' && formaPagamentoObj.trim()) {
+    formaPagamento = formaPagamentoObj.trim();
+  }
+
+  // Conta Bancária: NÃO EXISTE na API Tiny para contas a pagar (confirmado por investigação)
+  const contaBancaria = "N/D";
 
   const idConta = contaObj.id as string | number;
 
@@ -709,12 +725,12 @@ export function transformContaPagaToView(
     dataVencimento: toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) ?? new Date(),
     dataPagamento,
     valorTitulo: toPrismaDecimal(contaObj.valor, 0),
-    valorPago: toPrismaDecimal(getFirst(contaObj, ["valor_pago", "valorPago", "valor"]), 0),
+    valorPago: toPrismaDecimal(getFirst(contaObj, ["valor_pago", "valorPago", "valorPago"]), 0),
     desconto: toPrismaDecimal(contaObj.desconto, 0),
     juros: toPrismaDecimal(contaObj.juros, 0),
     multa: toPrismaDecimal(contaObj.multa, 0),
-    contaBancaria: safeText(getFirst(contaObj, ["conta_bancaria", "contaBancaria"])),
-    formaPagamento: safeText(getFirst(contaObj, ["forma_pagamento", "formaPagamento"])),
+    contaBancaria,
+    formaPagamento,
     usuarioBaixa: null,
     status: "Pago",
   };
@@ -747,15 +763,48 @@ export function transformContaRecebidaToView(
 
   const idConta = contaObj.id as string | number;
 
+  // Categoria: Extrair de objeto quando existe (API retorna {id, descricao}), senão "N/D"
+  const categoriaObj = contaObj.categoria as { id?: number; descricao?: string; nome?: string } | string | undefined;
+  let categoria = "N/D";
+  if (typeof categoriaObj === 'object' && categoriaObj) {
+    // API Tiny retorna "descricao" para contas a receber (verificado via testes)
+    categoria = String(categoriaObj.descricao || categoriaObj.nome || "N/D");
+  } else if (typeof categoriaObj === 'string' && categoriaObj.trim()) {
+    categoria = categoriaObj.trim();
+  }
+
+  // Centro de Custo: Campo NÃO EXISTE na API Tiny para contas a receber
+  // Documentado em: docs/CONTAS_RECEBER_LIMITACOES.md
+  const centroCusto: string | null = null;
+
+  // Forma de Recebimento: API retorna como objeto {id, nome}
+  // IMPORTANTE: Campo é "formaRecebimento" (não formaPagamento!)
+  // Confirmado via debug-api-direct.js em 09/01/2026
+  const formaRecebimentoObj = contaObj.formaRecebimento || contaObj.forma_recebimento;
+  let formaRecebimento: string = "N/D";
+  if (typeof formaRecebimentoObj === 'object' && formaRecebimentoObj) {
+    const pagtoNome = (formaRecebimentoObj as { nome?: string }).nome;
+    if (typeof pagtoNome === 'string' && pagtoNome.trim()) {
+      formaRecebimento = pagtoNome.trim();
+    }
+  } else if (typeof formaRecebimentoObj === 'string' && formaRecebimentoObj.trim()) {
+    formaRecebimento = formaRecebimentoObj.trim();
+  }
+
+  // Conta Bancária: Campo NÃO EXISTE na API Tiny para contas recebidas
+  // Confirmado via debug-api-direct.js em 09/01/2026 - API não retorna esse campo
+  // Mantido como "N/D" sempre
+  const contaBancaria: string = "N/D";
+
   return {
     id: generateId(companyId, `recebido_${idConta}`),
     company: { connect: { id: companyId } },
     tituloId: BigInt(idConta as number),
     cliente: safeText(safeGet(contaObj, ["cliente", "nome"]) || safeGet(contaObj, ["pessoa", "nome"])),
     cnpjCpf: safeText(safeGet(contaObj, ["cliente", "cpfCnpj"]) || safeGet(contaObj, ["pessoa", "cpfCnpj"])),
-    categoria: safeText(safeGet(contaObj, ["categoria", "nome"]) || safeGet(contaObj, "categoria")),
-    centroCusto: safeText(safeGet(contaObj, ["centroCusto", "nome"]) || safeGet(contaObj, "centroCusto")),
-    dataEmissao: toDate(getFirst(contaObj, ["data_emissao", "dataEmissao"])) ?? new Date(),
+    categoria,
+    centroCusto,
+    dataEmissao: toDate(getFirst(contaObj, ["data", "data_emissao", "dataEmissao"])) ?? new Date(),
     dataVencimento: toDate(getFirst(contaObj, ["data_vencimento", "dataVencimento"])) ?? new Date(),
     dataRecebimento,
     valorTitulo: toPrismaDecimal(contaObj.valor, 0),
@@ -765,8 +814,8 @@ export function transformContaRecebidaToView(
     multa: toPrismaDecimal(contaObj.multa, 0),
     comissaoCartao: toPrismaDecimal(getFirst(contaObj, ["comissao_cartao", "comissaoCartao"]) ?? 0, 0),
     comissaoMktplaces: toPrismaDecimal(getFirst(contaObj, ["comissao_marketplaces", "comissaoMarketplaces"]) ?? 0, 0),
-    contaBancaria: safeText(getFirst(contaObj, ["conta_bancaria", "contaBancaria"])),
-    formaRecebimento: safeText(getFirst(contaObj, ["forma_pagamento", "formaPagamento"])),
+    contaBancaria,
+    formaRecebimento,
     usuarioBaixa: null,
     status: "Recebido",
   };
