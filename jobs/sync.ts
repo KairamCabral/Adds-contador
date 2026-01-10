@@ -735,7 +735,12 @@ const syncContasPagas = async (
           },
         });
         
-        titulosProcessados.push(contaView.tituloId);
+        // Normalizar tituloId para bigint
+        const tituloIdBigInt =
+          typeof contaView.tituloId === "bigint"
+            ? contaView.tituloId
+            : BigInt(contaView.tituloId);
+        titulosProcessados.push(tituloIdBigInt);
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -882,11 +887,17 @@ const syncContasRecebidas = async (
           },
         });
         
-        titulosProcessados.push(contaView.tituloId);
+        // Normalizar tituloId para bigint
+        const tituloIdBigInt =
+          typeof contaView.tituloId === "bigint"
+            ? contaView.tituloId
+            : BigInt(contaView.tituloId);
+        titulosProcessados.push(tituloIdBigInt);
         processed++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`Conta ${conta.id}: ${msg}`);
+        const contaId = (contaEnriquecida as { id?: number })?.id || 'unknown';
+        errors.push(`Conta ${contaId}: ${msg}`);
       }
     }
 
@@ -1019,7 +1030,12 @@ const syncEstoque = async (
         for (const produtoEnriquecido of produtosEnriquecidos) {
           if (!produtoEnriquecido) continue;
           try {
-            const estoqueView = transformProdutoToEstoque(companyId, produtoEnriquecido, dataSnapshot, saidasPorProduto);
+            const estoqueView = transformProdutoToEstoque(
+              companyId, 
+              produtoEnriquecido as Record<string, unknown>, 
+              dataSnapshot, 
+              saidasPorProduto
+            );
 
             await prisma.vwEstoque.upsert({
               where: { id: estoqueView.id as string },
