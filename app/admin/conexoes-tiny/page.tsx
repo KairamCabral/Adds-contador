@@ -29,7 +29,11 @@ async function createCompany(formData: FormData) {
   revalidatePath("/admin/conexoes-tiny");
 }
 
-export default async function ConexoesTinyPage() {
+export default async function ConexoesTinyPage({
+  searchParams,
+}: {
+  searchParams: { status?: string; message?: string; companyId?: string };
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (!userHasRole(session, [Role.ADMIN])) redirect("/login");
@@ -65,6 +69,47 @@ export default async function ConexoesTinyPage() {
             <LogoutButton />
           </div>
         </header>
+
+        {/* Mensagens de status */}
+        {searchParams.status === "connected" && (
+          <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">✅</span>
+              <div>
+                <p className="font-semibold text-green-400">Conectado com sucesso!</p>
+                <p className="text-sm text-green-300/80">
+                  A empresa foi conectada ao Tiny ERP. Você já pode sincronizar dados.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {searchParams.status === "error" && searchParams.message && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+            <div className="flex items-start gap-2">
+              <span className="text-xl">❌</span>
+              <div className="flex-1">
+                <p className="font-semibold text-red-400">Erro ao conectar</p>
+                <p className="text-sm text-red-300/80 mt-1">
+                  {decodeURIComponent(searchParams.message)}
+                </p>
+                <details className="mt-2">
+                  <summary className="text-xs text-red-400/60 cursor-pointer hover:text-red-400">
+                    Ver possíveis soluções
+                  </summary>
+                  <ul className="mt-2 ml-4 text-xs text-red-300/70 space-y-1 list-disc">
+                    <li>Verifique se TINY_CLIENT_ID e TINY_CLIENT_SECRET estão corretos na Vercel</li>
+                    <li>Confirme que TINY_REDIRECT_URI está registrado no painel do Tiny</li>
+                    <li>Verifique se AUTH_SECRET está configurado na Vercel</li>
+                    <li>Tente desconectar e conectar novamente</li>
+                    <li>Consulte os logs da Vercel para mais detalhes</li>
+                  </ul>
+                </details>
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <h2 className="text-lg font-semibold text-slate-100">Nova empresa</h2>

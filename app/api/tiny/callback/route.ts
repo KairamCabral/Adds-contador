@@ -12,6 +12,14 @@ const successRedirect = (req: NextRequest, companyId: string) =>
     ),
   );
 
+const errorRedirect = (req: NextRequest, message: string) =>
+  NextResponse.redirect(
+    new URL(
+      `/admin/conexoes-tiny?status=error&message=${encodeURIComponent(message)}`,
+      req.url,
+    ),
+  );
+
 const errorResponse = (message: string, status = 400) =>
   NextResponse.json({ error: message }, { status });
 
@@ -21,15 +29,16 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state");
 
   if (!code || !state) {
-    return errorResponse("Parâmetros code/state ausentes");
+    return errorRedirect(request, "Parâmetros code/state ausentes");
   }
 
   let companyId: string;
   try {
     const parsed = parseOAuthState(state);
     companyId = parsed.companyId;
-  } catch {
-    return errorResponse("State inválido", 400);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "State inválido";
+    return errorRedirect(request, msg);
   }
 
   try {
@@ -61,8 +70,10 @@ export async function GET(request: NextRequest) {
     }
 
     return successRedirect(request, companyId);
-  } catch {
-    return errorResponse("Erro ao processar callback Tiny", 500);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("[Tiny Callback] Erro:", errorMessage, err);
+    return errorRedirect(request, `Erro: ${errorMessage}`);
   }
 }
 
