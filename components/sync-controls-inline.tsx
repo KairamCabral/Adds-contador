@@ -41,7 +41,6 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
     let completedOnce = false;
     let attempts = 0;
     let currentInterval = 2000; // Começar com 2s
-    let timeoutId: NodeJS.Timeout | undefined = undefined;
     let intervalId: NodeJS.Timeout | undefined = undefined;
 
     const checkSyncStatus = async () => {
@@ -112,7 +111,7 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
     };
     
     // Timeout máximo de 13 minutos
-    timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       clearTimeout(intervalId);
       setLoading(false);
       setSyncStats(null);
