@@ -158,8 +158,8 @@ export function SyncControlsInline({ companyId, lastSync }: Props) {
         };
       } else if (syncMode === "month" && selectedMonth) {
         const [year, month] = selectedMonth.split("-").map(Number);
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0, 23, 59, 59);
+        const startDate = new Date(year, month - 1, 1); // Primeiro dia do mês
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999); // Último dia do mês às 23:59:59.999
 
         endpoint = "/api/admin/sync/period";
         body = {
