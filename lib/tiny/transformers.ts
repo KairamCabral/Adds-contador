@@ -834,37 +834,65 @@ export type VwEstoqueInput = Prisma.VwEstoqueCreateInput;
 export function transformProdutoToEstoque(
   companyId: string,
   produto: Record<string, unknown>,
-  dataReferencia: Date
+  dataReferencia: Date,
+  saidasPorProduto: Map<string, number> = new Map()
 ): Prisma.VwEstoqueCreateInput {
   const produtoNome = safeText(pickFirst(produto.descricao, produto.nome, `Produto ${produto.id}`));
-  const categoriaNome = safeText(safeGet(produto, ["categoria", "nome"]));
+  
+  // Categoria: API retorna objeto {id, nome, caminhoCompleto} no detalhe
+  const categoriaObj = produto.categoria;
+  let categoriaNome = "N/D";
+  if (typeof categoriaObj === 'object' && categoriaObj) {
+    const catNome = (categoriaObj as { nome?: string; caminhoCompleto?: string }).nome 
+      || (categoriaObj as { caminhoCompleto?: string }).caminhoCompleto;
+    if (typeof catNome === 'string' && catNome.trim()) {
+      categoriaNome = catNome.trim();
+    }
+  } else if (typeof categoriaObj === 'string' && categoriaObj.trim()) {
+    categoriaNome = categoriaObj.trim();
+  }
+  
   const unidade = safeText(produto.unidade || "UN");
-  const saldoFinalStr = toDecimal(produto.saldo ?? produto.saldoFisico ?? 0) ?? "0";
-  const custoMedioStr = toDecimal(produto.custoMedio ?? produto.preco ?? 0) ?? "0";
+  const saldoFinalStr = toDecimal(produto.saldo ?? produto.saldoFisico ?? safeGet(produto, ["estoque", "quantidade"]) ?? 0) ?? "0";
+  const custoMedioStr = toDecimal(
+    produto.custoMedio 
+    ?? safeGet(produto, ["precos", "precoCustoMedio"])
+    ?? safeGet(produto, ["precos", "precoCusto"])
+    ?? produto.preco 
+    ?? 0
+  ) ?? "0";
   
   const saldoFinal = parseFloat(saldoFinalStr);
   const custoMedio = parseFloat(custoMedioStr);
+  
+  // CALCULAR SAÍDAS: buscar quantidade vendida no período (últimos 30 dias)
+  // Normalizar nome do produto para match com vendas
+  const produtoKey = produtoNome.toLowerCase().trim();
+  const saidas = saidasPorProduto.get(produtoKey) || 0;
+  
+  // CALCULAR ESTOQUE INICIAL: Inicial = Final + Saídas - Entradas - Ajustes
+  // Como Entradas e Ajustes não estão disponíveis na API, simplificamos para:
+  // Inicial = Final + Saídas
+  const estoqueInicial = saldoFinal + saidas;
   
   return {
     id: generateId(companyId, `estoque_${produto.id}_${dataReferencia.toISOString().split("T")[0]}`),
     company: { connect: { id: companyId } },
     dataReferencia,
     produto: produtoNome,
-    categoria: categoriaNome,
+    categoria: categoriaNome, // ✅ CORRIGIDO: Extrai de objeto {id, nome}
     unidadeMedida: unidade,
-    // Snapshot: Não temos dados de movimentação (inicial/entradas/saidas/ajustes) via GET /produtos
-    // Documentar que esses campos são "0" até implementar endpoint de movimentações
-    estoqueInicial: toPrismaDecimal(0),
-    entradas: toPrismaDecimal(0),
-    saidas: toPrismaDecimal(0),
-    ajustes: toPrismaDecimal(0),
-    estoqueFinal: toPrismaDecimal(saldoFinal),
-    custoMedio: toPrismaDecimal(custoMedio, 4), // 4 casas decimais
-    valorTotalEstoque: toPrismaDecimal(saldoFinal * custoMedio),
-    fornecedorUltimaCompra: "-", // Não disponível via GET /produtos
-    dataUltimaCompra: new Date("2000-01-01"), // Data placeholder (campo obrigatório)
-    responsavelConferencia: "-", // Não disponível
-    observacao: "-", // Não disponível
+    estoqueInicial: toPrismaDecimal(estoqueInicial), // ✅ CALCULADO: Final + Saídas
+    entradas: toPrismaDecimal(0), // ❌ Não disponível: API não tem endpoint de compras/NFes
+    saidas: toPrismaDecimal(saidas), // ✅ CALCULADO: De vendas do período (últimos 30 dias)
+    ajustes: toPrismaDecimal(0), // ❌ Não disponível: API não tem endpoint de movimentações
+    estoqueFinal: toPrismaDecimal(saldoFinal), // ✅ REAL: Da API Tiny /estoque ou /produtos
+    custoMedio: toPrismaDecimal(custoMedio, 4), // ✅ REAL: Da API Tiny
+    valorTotalEstoque: toPrismaDecimal(saldoFinal * custoMedio), // ✅ CALCULADO: Final × Custo
+    fornecedorUltimaCompra: "-", // ❌ Não disponível via API
+    dataUltimaCompra: new Date("2000-01-01"), // ❌ Data placeholder (campo obrigatório)
+    responsavelConferencia: "-", // ❌ Não disponível via API
+    observacao: "-", // ❌ Não disponível via API
   };
 }
 

@@ -353,6 +353,20 @@ export async function listProdutos(
 }
 
 /**
+ * Busca detalhe completo de um produto (inclui categoria)
+ */
+export async function getProdutoDetalhe(
+  connection: TinyConnection,
+  produtoId: number
+): Promise<unknown> {
+  const response = await tinyRequest<unknown>({
+    connection,
+    path: `/produtos/${produtoId}`,
+  });
+  return response;
+}
+
+/**
  * Lista todos os produtos (com paginação automática)
  * Usado para obter dados de estoque (saldo) de cada produto
  */

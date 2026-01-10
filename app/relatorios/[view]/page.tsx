@@ -21,7 +21,7 @@ type SearchParams = {
   page?: string;
 };
 
-const formatValue = (value: unknown): React.ReactNode => {
+const formatValue = (value: unknown, columnKey?: string): React.ReactNode => {
   if (value instanceof Date) {
     // Detectar "hora fake" de timezone offset (21:00, 22:00, 23:00, 00:00)
     const hour = value.getHours();
@@ -48,8 +48,24 @@ const formatValue = (value: unknown): React.ReactNode => {
     }
   }
 
+  // Detectar se é campo de quantidade (número inteiro sem decimais)
+  const isQuantityField = columnKey && (
+    columnKey === 'quantidade' || 
+    columnKey === 'tituloId' ||
+    columnKey === 'id' ||
+    columnKey.toLowerCase().includes('qtd') ||
+    columnKey.toLowerCase().includes('quantidade')
+  );
+
   if (typeof value === "object" && value !== null && "toNumber" in value) {
     const num = (value as { toNumber: () => number }).toNumber();
+    
+    if (isQuantityField) {
+      // Quantidade: número simples sem decimais (ex: 2, 10, 150)
+      return num % 1 === 0 ? num.toString() : num.toFixed(0);
+    }
+    
+    // Dinheiro: formato brasileiro com 2 casas decimais (ex: 1.234,56)
     return num.toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -57,6 +73,12 @@ const formatValue = (value: unknown): React.ReactNode => {
   }
 
   if (typeof value === "number") {
+    if (isQuantityField) {
+      // Quantidade: número simples sem decimais (ex: 2, 10, 150)
+      return value % 1 === 0 ? value.toString() : value.toFixed(0);
+    }
+    
+    // Dinheiro: formato brasileiro com 2 casas decimais (ex: 1.234,56)
     return value.toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -367,7 +389,7 @@ export default async function ReportPage({
                       <tr key={idx} className="hover:bg-slate-800/30">
                         {config.columns.map((col) => (
                           <td key={col.key} className="px-4 py-3 text-slate-300">
-                            {formatValue((item as Record<string, unknown>)[col.key])}
+                            {formatValue((item as Record<string, unknown>)[col.key], col.key)}
                           </td>
                         ))}
                       </tr>

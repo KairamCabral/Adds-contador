@@ -14,6 +14,7 @@ import {
   listAllEstoque,
   getContaPagarDetalhe,
   getContaReceberDetalhe,
+  getProdutoDetalhe,
 } from "@/lib/tiny/api";
 import type { TinyPedidoDetalhe } from "@/lib/tiny/types";
 import {
@@ -946,6 +947,31 @@ const syncEstoque = async (
       console.log(`[Sync ${module}] MODO DEV: Pulando delay e limitando a ${maxPages} páginas`);
     }
 
+    // CALCULAR SAÍDAS: Buscar vendas dos últimos 30 dias para calcular movimentações
+    console.log(`[Sync ${module}] Calculando saídas a partir de vendas (últimos 30 dias)...`);
+    const dataInicio = new Date(dataSnapshot);
+    dataInicio.setDate(dataInicio.getDate() - 30);
+    
+    const vendasAgrupadas = await prisma.vwVendas.groupBy({
+      by: ['produto'],
+      where: {
+        companyId,
+        dataHora: { gte: dataInicio, lte: dataSnapshot },
+        status: { notIn: ['Cancelado', 'Estornado'] }
+      },
+      _sum: { quantidade: true }
+    });
+    
+    // Criar mapa: produto (normalizado) → quantidade vendida
+    const saidasPorProduto = new Map<string, number>();
+    vendasAgrupadas.forEach(venda => {
+      const produtoKey = venda.produto.toLowerCase().trim();
+      const quantidade = Number(venda._sum.quantidade || 0);
+      saidasPorProduto.set(produtoKey, quantidade);
+    });
+    
+    console.log(`[Sync ${module}] Saídas calculadas para ${saidasPorProduto.size} produtos distintos`);
+
     console.log(`[Sync ${module}] Buscando e processando produtos em streaming...`);
 
     // Buscar e processar produtos PÁGINA POR PÁGINA (streaming)
@@ -966,10 +992,34 @@ const syncEstoque = async (
 
         console.log(`[Sync ${module}] Processando página ${pagina}: ${response.itens.length} produtos`);
         
-        // Processar IMEDIATAMENTE cada produto desta página
-        for (const produto of response.itens) {
+        // ENRICHMENT: Buscar detalhe de cada produto para obter categoria
+        const produtosEnriquecidos: (unknown | null)[] = [];
+        for (let i = 0; i < response.itens.length; i++) {
+          const produto = response.itens[i];
+          const produtoId = (produto as { id: number }).id;
+          
+          // Delay progressivo para evitar rate limit
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 300 + (i * 30)));
+          }
+          
           try {
-            const estoqueView = transformProdutoToEstoque(companyId, produto, dataSnapshot);
+            const detalheProduto = await getProdutoDetalhe(connection, produtoId);
+            produtosEnriquecidos.push(detalheProduto);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[Sync] Falha ao buscar detalhe do produto ${produtoId}: ${msg.substring(0, 200)}`);
+            produtosEnriquecidos.push(produto); // Fallback to list data
+          }
+        }
+        
+        console.log(`[Sync ${module}] Detalhes obtidos. Transformando ${produtosEnriquecidos.length} produtos...`);
+        
+        // Processar IMEDIATAMENTE cada produto desta página
+        for (const produtoEnriquecido of produtosEnriquecidos) {
+          if (!produtoEnriquecido) continue;
+          try {
+            const estoqueView = transformProdutoToEstoque(companyId, produtoEnriquecido, dataSnapshot, saidasPorProduto);
 
             await prisma.vwEstoque.upsert({
               where: { id: estoqueView.id as string },
@@ -992,8 +1042,9 @@ const syncEstoque = async (
             processed++;
           } catch (upsertErr) {
             const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
-            console.warn(`[Sync] Pulando produto ${produto.sku ?? produto.codigo ?? produto.id}: ${msg.substring(0, 100)}`);
-            errors.push(`Produto ${produto.sku ?? produto.codigo ?? produto.id}: ${msg.split("\n")[0]}`);
+            const produtoId = (produtoEnriquecido as { id?: number })?.id || 'unknown';
+            console.warn(`[Sync] Pulando produto ${produtoId}: ${msg.substring(0, 100)}`);
+            errors.push(`Produto ${produtoId}: ${msg.split("\n")[0]}`);
             skipped++;
           }
         }
