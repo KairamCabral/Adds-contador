@@ -202,7 +202,7 @@ export async function listAllContasReceber(
 ): Promise<TinyContaReceber[]> {
   const allContas: TinyContaReceber[] = [];
   let pagina = 1;
-  let hasMore = true;console.log(
+  let hasMore = true;  console.log(
     `[Tiny] Buscando contas a receber de ${formatDateForTiny(dataInicial)} a ${formatDateForTiny(dataFinal)}${situacao ? ` (${situacao})` : ""}`
   );
 

@@ -7,6 +7,7 @@ import SyncControlsInline from "@/components/sync-controls-lazy";
 import { LogoutButton } from "@/components/logout-button";
 import { ReportTabs } from "@/components/report-tabs";
 import { SyncEmptyState } from "@/components/sync-empty-state";
+import { MonthFilter } from "@/components/month-filter";
 import { prisma } from "@/lib/db";
 import { fetchReport } from "@/lib/reports";
 import { reports, ReportView } from "../config";
@@ -242,7 +243,7 @@ export default async function ReportPage({
       <main className="mx-auto max-w-[1920px] px-6 py-6">
 
         {/* Área Unificada: Filtros + Exports */}
-        <div className="mb-6 rounded-lg border border-slate-800 bg-slate-900/50 overflow-hidden">
+        <div className="mb-6 rounded-lg border border-slate-800 bg-slate-900/50">
           {/* Cabeçalho com Resumo */}
           <div className="border-b border-slate-800 bg-slate-900/80 px-4 py-2.5">
             <div className="flex items-center justify-between">
@@ -257,12 +258,12 @@ export default async function ReportPage({
                       <div className="flex gap-2">
                         {filters.start && (
                           <span className="rounded-full bg-sky-600/20 px-2 py-0.5 text-xs text-sky-300">
-                            De: {new Date(filters.start).toLocaleDateString('pt-BR')}
+                            De: {filters.start.split('-').reverse().join('/')}
                           </span>
                         )}
                         {filters.end && (
                           <span className="rounded-full bg-sky-600/20 px-2 py-0.5 text-xs text-sky-300">
-                            Até: {new Date(filters.end).toLocaleDateString('pt-BR')}
+                            Até: {filters.end.split('-').reverse().join('/')}
                           </span>
                         )}
                         {filters.search && (
@@ -312,52 +313,53 @@ export default async function ReportPage({
 
           {/* Formulário de Filtros */}
           <div className="p-4">
-            <form className="flex flex-wrap gap-3" method="get">
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  name="start"
-                  defaultValue={filters.start}
-                  placeholder="Data inicial"
-                  className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                />
-                <span className="flex items-center text-slate-600">→</span>
-                <input
-                  type="date"
-                  name="end"
-                  defaultValue={filters.end}
-                  placeholder="Data final"
-                  className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                />
-              </div>
+            <form className="flex flex-wrap items-center gap-3" method="get">
+              {/* Campos hidden para manter filtros de data ao buscar */}
+              {filters.start && (
+                <input type="hidden" name="start" value={filters.start} />
+              )}
+              {filters.end && (
+                <input type="hidden" name="end" value={filters.end} />
+              )}
               
-              <input
-                type="text"
-                name="search"
-                placeholder="Buscar..."
-                defaultValue={filters.search}
-                className="flex-1 min-w-[200px] rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              {/* Filtro de Mês */}
+              <MonthFilter 
+                initialStart={filters.start}
+                initialEnd={filters.end}
               />
               
-              <button
-                type="submit"
-                className="flex items-center gap-2 rounded bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 transition-colors"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Aplicar
-              </button>
+              {/* Campo de Busca */}
+              <div className="flex flex-1 min-w-[250px] gap-2">
+                <input
+                  type="text"
+                  name="search"
+                  placeholder="Buscar por nome, ID, descrição..."
+                  defaultValue={filters.search}
+                  className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+                
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 transition-colors"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">Buscar</span>
+                </button>
+              </div>
               
+              {/* Botão Limpar Tudo */}
               {(filters.start || filters.end || filters.search) && (
                 <a
                   href={`/relatorios/${view}`}
-                  className="flex items-center gap-2 rounded border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-300 transition-colors"
+                  className="flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors"
+                  title="Limpar todos os filtros"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
-                  Limpar
+                  <span className="hidden sm:inline">Limpar filtros</span>
                 </a>
               )}
             </form>

@@ -60,21 +60,23 @@ type SyncModule =
 // CONFIGURAÇÃO
 // ============================================
 
-// Módulos P0 (prioritários)
+// Módulos P0 (prioritários - leves, executam primeiro)
 const P0_MODULES: SyncModule[] = [
-  "vw_vendas",
   "vw_contas_receber_posicao",
   "vw_contas_pagar",
 ];
 
-// Módulos P1 (secundários)
+// Módulos P1 (secundários - contas baixadas)
 const P1_MODULES: SyncModule[] = ["vw_contas_pagas", "vw_contas_recebidas"];
 
 // Módulos P2 (estoque - snapshot diário)
 const P2_MODULES: SyncModule[] = ["vw_estoque"];
 
-// Todos os módulos para sync completo
-const ALL_MODULES: SyncModule[] = [...P0_MODULES, ...P1_MODULES, ...P2_MODULES];
+// Módulos P3 (pesados - executam por último para não bloquear)
+const P3_MODULES: SyncModule[] = ["vw_vendas"];
+
+// Todos os módulos para sync completo (ordem otimizada: leves primeiro, pesados por último)
+const ALL_MODULES: SyncModule[] = [...P0_MODULES, ...P1_MODULES, ...P2_MODULES, ...P3_MODULES];
 
 // Configuração de lookback (via env vars)
 const { initialLookbackDays: INITIAL_SYNC_DAYS, incrementalLookbackDays: INCREMENTAL_SYNC_DAYS } = getSyncConfig();
@@ -1069,38 +1071,76 @@ const syncByModule = async (
   modules: SyncModule[] = ALL_MODULES,
   options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
 ): Promise<ModuleResult[]> => {
-  const results: ModuleResult[] = [];for (const mod of modules) {
-    console.log(`[Sync] Iniciando ${mod} para company ${companyId}`);let result: ModuleResult;
+  const results: ModuleResult[] = [];
+  
+  const dateRange = options?.startDate && options?.endDate 
+    ? `${options.startDate.toISOString().split('T')[0]}..${options.endDate.toISOString().split('T')[0]}`
+    : 'incremental';
 
-    switch (mod) {
-      case "vw_vendas":
-        result = await syncVendas(companyId, connection, options);
-        break;
-      case "vw_contas_receber_posicao":
-        result = await syncContasReceberPosicao(companyId, connection, options);
-        break;
-      case "vw_contas_pagar":
-        result = await syncContasPagar(companyId, connection, options);
-        break;
-      case "vw_contas_pagas":
-        result = await syncContasPagas(companyId, connection, options);
-        break;
-      case "vw_contas_recebidas":
-        result = await syncContasRecebidas(companyId, connection, options);
-        break;
-      case "vw_estoque":
-        result = await syncEstoque(companyId, connection, options);
-        break;
-      default:
-        result = { module: mod, processed: 0, skipped: 0, errors: ["Módulo não implementado"] };
+  for (const mod of modules) {
+    const moduleStartTime = Date.now();
+    console.log(`[Sync] START module=${mod} range=${dateRange} company=${companyId}`);
+    
+    let result: ModuleResult;
+
+    try {
+      switch (mod) {
+        case "vw_vendas":
+          result = await syncVendas(companyId, connection, options);
+          break;
+        case "vw_contas_receber_posicao":
+          result = await syncContasReceberPosicao(companyId, connection, options);
+          break;
+        case "vw_contas_pagar":
+          result = await syncContasPagar(companyId, connection, options);
+          break;
+        case "vw_contas_pagas":
+          result = await syncContasPagas(companyId, connection, options);
+          break;
+        case "vw_contas_recebidas":
+          result = await syncContasRecebidas(companyId, connection, options);
+          break;
+        case "vw_estoque":
+          result = await syncEstoque(companyId, connection, options);
+          break;
+        default:
+          result = { module: mod, processed: 0, skipped: 0, errors: ["Módulo não implementado"] };
+      }
+
+      results.push(result);
+      
+      const tookMs = Date.now() - moduleStartTime;
+      const hasErrors = result.errors && result.errors.length > 0;
+      
+      if (hasErrors) {
+        console.log(
+          `[Sync] END   module=${mod} processed=${result.processed} errors=${result.errors?.length || 0} tookMs=${tookMs}`
+        );
+        console.warn(`[Sync] ERROR module=${mod} firstError="${result.errors?.[0]?.substring(0, 100)}"`);
+      } else {
+        console.log(
+          `[Sync] END   module=${mod} processed=${result.processed} tookMs=${tookMs}`
+        );
+      }
+    } catch (error) {
+      // CRÍTICO: Capturar erro e NÃO abortar o sync global
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const tookMs = Date.now() - moduleStartTime;
+      
+      console.error(`[Sync] ERROR module=${mod} message="${errorMessage.substring(0, 200)}" tookMs=${tookMs}`);
+      
+      result = {
+        module: mod,
+        processed: 0,
+        skipped: 0,
+        errors: [errorMessage]
+      };
+      
+      results.push(result);
     }
-
-    results.push(result);
-    console.log(
-      `[Sync] Finalizado ${mod}: ${result.processed} registros${
-        result.errors?.length ? `, ${result.errors.length} erros` : ""
-      }`
-    );}return results;
+  }
+  
+  return results;
 };
 
 // ============================================
@@ -1110,11 +1150,13 @@ const syncByModule = async (
 export async function runSync(options: SyncOptions) {
   const SYNC_TIMEOUT_MS = 12 * 60 * 1000; // 12 minutos (permite processar todos os módulos)
   const syncStartTime = Date.now();
+  const modulesRequested = options.modules ?? ALL_MODULES;
 
   console.log("[Sync] Iniciando sincronização...", {
     companyId: options.companyId ?? "todas",
     triggeredBy: options.triggeredByUserId ?? "system",
     isCron: options.isCron ?? false,
+    modules: modulesRequested.join(", "),
     timeoutMs: SYNC_TIMEOUT_MS,
   });
 
@@ -1181,7 +1223,9 @@ export async function runSync(options: SyncOptions) {
         error: "Timeout global",
       });
       continue;
-    }try {
+    }
+    
+    try {
       const stats = await syncByModule(
         company.id,
         connection,
@@ -1241,12 +1285,34 @@ export async function runSync(options: SyncOptions) {
     }
   }
 
-  console.log("[Sync] Sincronização finalizada", {
+  // Log FINAL obrigatório em qualquer cenário
+  const totalMs = Date.now() - syncStartTime;
+  const modulesRun: string[] = [];
+  const modulesFailed: string[] = [];
+  
+  companies.forEach(company => {
+    const companyResult = results.find(r => r.companyId === company.id);
+    if (companyResult && companyResult.status !== "skipped") {
+      // Coletar módulos que rodaram (mesmo com erros parciais)
+      modulesRun.push(...modulesRequested);
+    }
+  });
+  
+  results.forEach(r => {
+    if (r.status === "error") {
+      modulesFailed.push(r.companyId);
+    }
+  });
+
+  console.log("[Sync] DONE", {
     totalCompanies: companies.length,
     synced: results.filter((r) => r.status === "success").length,
     partial: results.filter((r) => r.status === "partial").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,
+    modulesRun: modulesRequested,
+    modulesFailed: modulesFailed.length > 0 ? modulesFailed : "none",
+    totalMs,
   });
 
   return { runIds, results };
