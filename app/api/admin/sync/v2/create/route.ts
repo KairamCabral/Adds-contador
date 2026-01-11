@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
     const syncRun = await createSyncRun({
       companyId,
-      mode: syncMode,
+      syncMode: syncMode,
       startDate: start,
       endDate: end,
       triggeredByUserId: session.user.id,

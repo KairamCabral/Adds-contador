@@ -45,12 +45,12 @@ export interface SyncProgress {
  */
 export async function createSyncRun(params: {
   companyId: string;
-  mode: "incremental" | "period";
+  syncMode: "incremental" | "period";
   startDate?: Date;
   endDate?: Date;
   triggeredByUserId?: string;
 }) {
-  const { companyId, mode, startDate, endDate, triggeredByUserId } = params;
+  const { companyId, syncMode, startDate, endDate, triggeredByUserId } = params;
 
   // Inicializar progressJson com todos os módulos pendentes
   const progressJson: SyncProgress = {
@@ -67,7 +67,7 @@ export async function createSyncRun(params: {
   const syncRun = await prisma.syncRun.create({
     data: {
       companyId,
-      mode,
+      syncMode,
       startDate,
       endDate,
       status: "QUEUED" as SyncStatus,
@@ -105,7 +105,7 @@ export async function startSyncRun(runId: string) {
   }
 
   // Pre-enrichment opcional para sync de período
-  if (run.mode === "period" && run.startDate && run.endDate) {
+  if (run.syncMode === "period" && run.startDate && run.endDate) {
     const connection = run.company.connections[0];
     
     if (connection) {
@@ -235,7 +235,7 @@ export async function runSyncStep(runId: string): Promise<boolean> {
       startDate: run.startDate || undefined,
       endDate: run.endDate || undefined,
       isCron: false,
-      mode: run.mode as "incremental" | "period",
+      mode: run.syncMode as "incremental" | "period",
     };
 
     let result;

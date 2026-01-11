@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       run: {
         id: syncRun.id,
         companyId: syncRun.companyId,
-        mode: syncRun.mode,
+        mode: syncRun.syncMode,
         status: syncRun.status,
         currentModule: syncRun.currentModule,
         progress: syncRun.progressJson,

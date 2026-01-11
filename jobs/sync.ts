@@ -42,7 +42,7 @@ type SyncOptions = {
   startDate?: Date;
   endDate?: Date;
   modules?: SyncModule[];
-  mode?: "incremental" | "period"; // Modo do sync: incremental (com enrichment limitado) ou period (sem enrichment)
+  syncMode?: "incremental" | "period"; // Modo do sync: incremental (com enrichment limitado) ou period (sem enrichment)
 };
 
 type ModuleResult = {
@@ -975,7 +975,7 @@ const syncContasRecebidas = async (
 const syncEstoque = async (
   companyId: string,
   connection: TinyConnection,
-  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean; mode?: "incremental" | "period" }
 ): Promise<ModuleResult> => {
   const module = "vw_estoque";
   const errors: string[] = [];
@@ -983,6 +983,14 @@ const syncEstoque = async (
   let skipped = 0;
 
   try {
+    // ⚠️ IMPORTANTE: Estoque é snapshot do momento, não deveria rodar em sync de período
+    // Esta validação é uma camada extra de segurança caso seja forçado
+    if (options?.mode === "period") {
+      console.warn(`[Sync ${module}] ⚠️ AVISO: Estoque não deveria rodar em sync de período (é snapshot, não histórico)`);
+      console.warn(`[Sync ${module}] Pulando sincronização de estoque`);
+      return { module, processed: 0, skipped: 0 };
+    }
+
     // Estoque é um snapshot, sempre busca posição completa atual
     const now = new Date();
     const dataSnapshot = now;
@@ -1031,24 +1039,38 @@ const syncEstoque = async (
 
         console.log(`[Sync ${module}] Processando página ${pagina}: ${response.itens.length} produtos`);
         
+        // Decidir se faz enrichment
+        const skipEnrichment = options?.mode === "period";
+        
+        if (skipEnrichment) {
+          console.log(`[Sync ${module}] ⚡ Modo PERÍODO: SEM enrichment (usando dados da lista)`);
+        }
+        
         // ENRICHMENT: Buscar detalhe de cada produto para obter categoria
         const produtosEnriquecidos: (unknown | null)[] = [];
-        for (let i = 0; i < response.itens.length; i++) {
-          const produto = response.itens[i];
-          const produtoId = (produto as { id: number }).id;
-          
-          // Delay progressivo para evitar rate limit
-          if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 300 + (i * 30)));
-          }
-          
-          try {
-            const detalheProduto = await getProdutoDetalhe(connection, produtoId);
-            produtosEnriquecidos.push(detalheProduto);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.warn(`[Sync] Falha ao buscar detalhe do produto ${produtoId}: ${msg.substring(0, 200)}`);
-            produtosEnriquecidos.push(produto); // Fallback to list data
+        
+        if (skipEnrichment) {
+          // Modo período: usar dados da lista sem chamar /produtos/{id}
+          produtosEnriquecidos.push(...response.itens);
+        } else {
+          // Modo normal: enriquecer com detalhes
+          for (let i = 0; i < response.itens.length; i++) {
+            const produto = response.itens[i];
+            const produtoId = (produto as { id: number }).id;
+            
+            // Delay progressivo para evitar rate limit
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 300 + (i * 30)));
+            }
+            
+            try {
+              const detalheProduto = await getProdutoDetalhe(connection, produtoId);
+              produtosEnriquecidos.push(detalheProduto);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.warn(`[Sync] Falha ao buscar detalhe do produto ${produtoId}: ${msg.substring(0, 200)}`);
+              produtosEnriquecidos.push(produto); // Fallback to list data
+            }
           }
         }
         
@@ -1229,13 +1251,28 @@ const syncByModule = async (
 export async function runSync(options: SyncOptions) {
   const SYNC_TIMEOUT_MS = 12 * 60 * 1000; // 12 minutos (permite processar todos os módulos)
   const syncStartTime = Date.now();
-  const modulesRequested = options.modules ?? ALL_MODULES;
+  
+  // Determinar módulos a sincronizar
+  let modulesToSync = options.modules ?? ALL_MODULES;
+  
+  // Se for sync de período E não especificou módulos explicitamente, excluir estoque
+  // Motivo: estoque é snapshot do momento atual, não faz sentido em histórico de período
+  if (options.syncMode === "period" && !options.modules) {
+    modulesToSync = ALL_MODULES.filter(m => m !== "vw_estoque");
+    console.log(`[Sync] Modo período detectado: excluindo vw_estoque (snapshot não histórico)`);
+  }
 
-  console.log("[Sync] Iniciando sincronização...", {
+  const dateRange = options.startDate && options.endDate
+    ? `${options.startDate.toISOString().split('T')[0]}..${options.endDate.toISOString().split('T')[0]}`
+    : 'incremental';
+
+  console.log("[Sync] START", {
     companyId: options.companyId ?? "todas",
     triggeredBy: options.triggeredByUserId ?? "system",
     isCron: options.isCron ?? false,
-    modules: modulesRequested.join(", "),
+    syncMode: options.syncMode ?? "incremental",
+    dateRange,
+    modules: modulesToSync.join(", "),
     timeoutMs: SYNC_TIMEOUT_MS,
   });
 
@@ -1308,12 +1345,12 @@ export async function runSync(options: SyncOptions) {
       const stats = await syncByModule(
         company.id,
         connection,
-        options.modules ?? ALL_MODULES,
+        modulesToSync,
         {
           startDate: options.startDate,
           endDate: options.endDate,
           isCron: options.isCron,
-          mode: options.mode,
+          mode: options.syncMode,
         }
       );
       const hasErrors = stats.some((s) => s.errors && s.errors.length > 0);
@@ -1374,7 +1411,7 @@ export async function runSync(options: SyncOptions) {
     const companyResult = results.find(r => r.companyId === company.id);
     if (companyResult && companyResult.status !== "skipped") {
       // Coletar módulos que rodaram (mesmo com erros parciais)
-      modulesRun.push(...modulesRequested);
+      modulesRun.push(...modulesToSync);
     }
   });
   
@@ -1384,13 +1421,13 @@ export async function runSync(options: SyncOptions) {
     }
   });
 
-  console.log("[Sync] DONE", {
+  console.log("[Sync] END", {
     totalCompanies: companies.length,
     synced: results.filter((r) => r.status === "success").length,
     partial: results.filter((r) => r.status === "partial").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,
-    modulesRun: modulesRequested,
+    modulesRun: modulesToSync.join(", "),
     modulesFailed: modulesFailed.length > 0 ? modulesFailed : "none",
     totalMs,
   });

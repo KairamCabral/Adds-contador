@@ -105,7 +105,7 @@ model TinyConnection {
 model SyncRun {
   id                String       @id @default(uuid())
   companyId         String
-  mode              String       @default("incremental") // "incremental" | "period"
+  syncMode          String       @default("incremental") // "incremental" | "period"
   startDate         DateTime?
   endDate           DateTime?
   status            SyncStatus   @default(QUEUED)
