@@ -110,12 +110,18 @@ model SyncRun {
   endDate           DateTime?
   status            SyncStatus   @default(QUEUED)
   currentModule     String?
-  progressJson      Json? // { modules: { [key]: { status, processed, errors } } }
+  progressJson      Json?        @default("{}") // { modules: { [key]: { status, processed, errors } } }
   errorMessage      String?
   createdAt         DateTime     @default(now())
   startedAt         DateTime?
   finishedAt        DateTime?
   triggeredByUserId String?
+  
+  // Campos para Sync V2 (chunks/steps)
+  modules           String[]     @default([]) // Lista de módulos a sincronizar
+  moduleIndex       Int          @default(0)  // Índice do módulo atual
+  cursor            Json?        @default("{}") // Cursor para paginação dentro do módulo
+  
   company           Company      @relation(fields: [companyId], references: [id])
   triggeredByUser   User?        @relation("SyncTriggeredBy", fields: [triggeredByUserId], references: [id])
   logs              SyncRunLog[]

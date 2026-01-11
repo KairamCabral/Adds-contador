@@ -1,56 +1,258 @@
-/**
- * POST /api/admin/sync/v2/step
- * 
- * Executa UM PASSO do sync (um módulo por vez).
- * Retorna o status atualizado e se ainda há trabalho pendente.
- * 
- * A UI deve chamar este endpoint em loop enquanto hasMore=true.
- */
-
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/auth";
-import { runSyncStep, getSyncRunStatus } from "@/lib/sync/executor";
+import { auth } from "@/auth";
+import { userHasRole } from "@/lib/authz";
+import { Role } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import {
+  processVendasChunk,
+  processContasReceberChunk,
+  processContasPagarChunk,
+  processContasPagasChunk,
+  processContasRecebidasChunk,
+} from "@/lib/sync/chunk-executor";
 
-export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 minutos por módulo
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  const session = await auth();
 
-export async function POST(req: NextRequest) {
+  if (!userHasRole(session, [Role.ADMIN, Role.OPERADOR])) {
+    return NextResponse.json({ error: "Proibido" }, { status: 403 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    }
-
-    const body = await req.json();
+    const body = await request.json();
     const { runId } = body;
 
     if (!runId) {
-      return NextResponse.json({ error: "runId obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "runId é obrigatório" },
+        { status: 400 }
+      );
     }
 
-    // Executar um passo
-    const hasMore = await runSyncStep(runId);
+    // Buscar SyncRun com conexão Tiny
+    const syncRun = await prisma.syncRun.findUnique({
+      where: { id: runId },
+      include: {
+        company: {
+          include: {
+            connections: {
+              take: 1,
+            },
+          },
+        },
+      },
+    });
 
-    // Buscar status atualizado
-    const syncRun = await getSyncRunStatus(runId);
+    if (!syncRun) {
+      return NextResponse.json(
+        { error: "SyncRun não encontrado" },
+        { status: 404 }
+      );
+    }
+
+    // Se não está RUNNING, retornar status atual
+    if (syncRun.status !== "RUNNING") {
+      return NextResponse.json({
+        success: true,
+        status: syncRun.status,
+        message: `Sync não está rodando (status: ${syncRun.status})`,
+      });
+    }
+
+    // Verificar conexão Tiny
+    const connection = syncRun.company.connections[0];
+    if (!connection) {
+      await prisma.syncRun.update({
+        where: { id: runId },
+        data: {
+          status: "ERROR",
+          errorMessage: "Sem conexão Tiny",
+          finishedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: false,
+        error: "Sem conexão Tiny",
+        status: "ERROR",
+      });
+    }
+
+    // Verificar se já finalizou todos os módulos
+    if (syncRun.moduleIndex >= syncRun.modules.length) {
+      await prisma.syncRun.update({
+        where: { id: runId },
+        data: {
+          status: "DONE",
+          finishedAt: new Date(),
+        },
+      });
+
+      const durationMs = Date.now() - startTime;
+      console.log(`[SyncV2 Step] ✓ Sync finalizado: ${runId} em ${durationMs}ms`);
+
+      return NextResponse.json({
+        success: true,
+        status: "DONE",
+        message: "Todos os módulos foram processados",
+      });
+    }
+
+    // Pegar módulo atual
+    const currentModule = syncRun.modules[syncRun.moduleIndex];
+    const cursor = (syncRun.cursor as Record<string, unknown>) || {};
+
+    console.log(`[SyncV2 Step] Processando módulo ${currentModule} (${syncRun.moduleIndex + 1}/${syncRun.modules.length})`);
+
+    // Processar chunk baseado no módulo
+    let result;
+    const startDate = syncRun.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const endDate = syncRun.endDate || new Date();
+
+    switch (currentModule) {
+      case "vw_vendas":
+        result = await processVendasChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
+        break;
+
+      case "vw_contas_receber_posicao":
+        result = await processContasReceberChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
+        break;
+
+      case "vw_contas_pagar":
+        result = await processContasPagarChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
+        break;
+
+      case "vw_contas_pagas":
+        result = await processContasPagasChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
+        break;
+
+      case "vw_contas_recebidas":
+        result = await processContasRecebidasChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
+        break;
+
+      default:
+        result = {
+          processed: 0,
+          cursor: {},
+          done: true,
+          error: `Módulo não implementado: ${currentModule}`,
+        };
+    }
+
+    // Atualizar progresso
+    const progressJson = (syncRun.progressJson as Record<string, any>) || {};
+    if (!progressJson[currentModule]) {
+      progressJson[currentModule] = { processed: 0 };
+    }
+    progressJson[currentModule].processed += result.processed;
+
+    // Se o módulo terminou, avançar para o próximo
+    const newModuleIndex = result.done ? syncRun.moduleIndex + 1 : syncRun.moduleIndex;
+    const newCursor = result.done ? {} : result.cursor;
+
+    // Se tinha erro, marcar como ERROR
+    if (result.error) {
+      await prisma.syncRun.update({
+        where: { id: runId },
+        data: {
+          status: "ERROR",
+          errorMessage: result.error,
+          progressJson,
+          finishedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: false,
+        status: "ERROR",
+        error: result.error,
+      });
+    }
+
+    // Atualizar SyncRun
+    await prisma.syncRun.update({
+      where: { id: runId },
+      data: {
+        moduleIndex: newModuleIndex,
+        cursor: newCursor,
+        progressJson,
+        currentModule: newModuleIndex < syncRun.modules.length 
+          ? syncRun.modules[newModuleIndex] 
+          : null,
+      },
+    });
+
+    const durationMs = Date.now() - startTime;
+    const totalProgress = Math.floor((newModuleIndex / syncRun.modules.length) * 100);
+
+    console.log(`[SyncV2 Step] ✓ Step concluído em ${durationMs}ms. Módulo: ${currentModule}, Processados: ${result.processed}, Done: ${result.done}, Progress: ${totalProgress}%`);
 
     return NextResponse.json({
       success: true,
-      runId: syncRun.id,
-      status: syncRun.status,
-      currentModule: syncRun.currentModule,
-      progress: syncRun.progressJson,
-      hasMore,
-      finishedAt: syncRun.finishedAt,
+      status: "RUNNING",
+      currentModule,
+      processed: result.processed,
+      done: result.done,
+      moduleProgress: newModuleIndex,
+      totalModules: syncRun.modules.length,
+      overallProgress: totalProgress,
+      durationMs,
     });
-  } catch (error: any) {
-    console.error("[Sync Step] Erro:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro ao executar step";
+    console.error("[SyncV2 Step] Erro:", error);
+
+    // Tentar marcar como ERROR no banco
+    try {
+      const body = await request.json();
+      const { runId } = body;
+      if (runId) {
+        await prisma.syncRun.update({
+          where: { id: runId },
+          data: {
+            status: "ERROR",
+            errorMessage,
+            finishedAt: new Date(),
+          },
+        });
+      }
+    } catch (updateErr) {
+      console.error("[SyncV2 Step] Erro ao atualizar status:", updateErr);
+    }
+
     return NextResponse.json(
-      {
-        error: "Erro ao executar passo da sincronização",
-        details: error.message,
-      },
+      { error: errorMessage },
       { status: 500 }
     );
   }

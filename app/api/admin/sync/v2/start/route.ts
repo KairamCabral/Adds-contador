@@ -1,46 +1,77 @@
-/**
- * POST /api/admin/sync/v2/start
- * 
- * Inicia a execução de um SyncRun (muda status de QUEUED para RUNNING).
- * Deve ser chamado UMA VEZ após criar o run.
- */
-
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/auth";
-import { startSyncRun } from "@/lib/sync/executor";
+import { auth } from "@/auth";
+import { userHasRole } from "@/lib/authz";
+import { Role } from "@prisma/client";
+import { prisma } from "@/lib/db";
 
-export const dynamic = "force-dynamic";
-export const maxDuration = 10;
+export async function POST(request: NextRequest) {
+  const session = await auth();
 
-export async function POST(req: NextRequest) {
+  if (!userHasRole(session, [Role.ADMIN, Role.OPERADOR])) {
+    return NextResponse.json({ error: "Proibido" }, { status: 403 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    }
-
-    const body = await req.json();
+    const body = await request.json();
     const { runId } = body;
 
     if (!runId) {
-      return NextResponse.json({ error: "runId obrigatório" }, { status: 400 });
+      return NextResponse.json(
+        { error: "runId é obrigatório" },
+        { status: 400 }
+      );
     }
 
-    const syncRun = await startSyncRun(runId);
+    // Buscar SyncRun
+    const syncRun = await prisma.syncRun.findUnique({
+      where: { id: runId },
+    });
+
+    if (!syncRun) {
+      return NextResponse.json(
+        { error: "SyncRun não encontrado" },
+        { status: 404 }
+      );
+    }
+
+    // Verificar se já está rodando ou finalizado
+    if (syncRun.status === "RUNNING") {
+      return NextResponse.json({
+        success: true,
+        message: "Sync já está rodando",
+        status: syncRun.status,
+      });
+    }
+
+    if (syncRun.status === "DONE" || syncRun.status === "ERROR" || syncRun.status === "CANCELLED") {
+      return NextResponse.json({
+        success: false,
+        message: `Sync já finalizado com status: ${syncRun.status}`,
+        status: syncRun.status,
+      });
+    }
+
+    // Iniciar sync
+    const updated = await prisma.syncRun.update({
+      where: { id: runId },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(),
+      },
+    });
+
+    console.log(`[SyncV2 Start] ✓ SyncRun iniciado: ${runId}`);
 
     return NextResponse.json({
       success: true,
-      runId: syncRun?.id,
-      status: syncRun?.status,
+      runId: updated.id,
+      status: updated.status,
     });
-  } catch (error: any) {
-    console.error("[Sync Start] Erro:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro ao iniciar sync";
+    console.error("[SyncV2 Start] Erro:", error);
     return NextResponse.json(
-      {
-        error: "Erro ao iniciar sincronização",
-        details: error.message,
-      },
+      { error: errorMessage },
       { status: 500 }
     );
   }
