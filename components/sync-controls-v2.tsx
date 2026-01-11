@@ -31,11 +31,24 @@ export function SyncControlsV2({ companyId, lastSync }: Props) {
     try {
       let body: Record<string, unknown> = {
         companyId,
-        mode: mode === "quick" ? "incremental" : "period",
+        syncMode: mode === "quick" ? "incremental" : "period",
       };
 
       if (mode === "month" && selectedMonth) {
-        body.month = selectedMonth;
+        // Calcular startDate e endDate em UTC do mês selecionado
+        const [year, month] = selectedMonth.split("-").map(Number);
+        
+        // Primeiro dia do mês às 00:00:00.000 UTC
+        const startDate = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+        
+        // Último dia do mês às 23:59:59.999 UTC
+        const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        const endDate = new Date(Date.UTC(year, month - 1, lastDayOfMonth, 23, 59, 59, 999));
+        
+        body.startDate = startDate.toISOString();
+        body.endDate = endDate.toISOString();
+        
+        console.log(`[Sync V2] Período: ${selectedMonth} (${body.startDate} a ${body.endDate})`);
       }
 
       // Criar SyncRun

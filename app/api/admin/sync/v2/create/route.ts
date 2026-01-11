@@ -12,6 +12,7 @@ const P3_MODULES = ["vw_vendas"];
 const ALL_MODULES = [...P0_MODULES, ...P1_MODULES, ...P2_MODULES, ...P3_MODULES];
 
 export async function POST(request: NextRequest) {
+  const requestId = `v2-create-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const session = await auth();
 
   if (!userHasRole(session, [Role.ADMIN, Role.OPERADOR])) {
@@ -22,7 +23,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { companyId, startDate, endDate, syncMode } = body;
 
+    console.log(`[SyncV2 Create] START requestId=${requestId} companyId=${companyId}`);
+
     if (!companyId) {
+      console.error(`[SyncV2 Create] ERROR requestId=${requestId} error="companyId missing"`);
       return NextResponse.json(
         { error: "companyId é obrigatório" },
         { status: 400 }
@@ -37,7 +41,7 @@ export async function POST(request: NextRequest) {
     if (mode === "period") {
       // Excluir estoque em sync de período (snapshot não histórico)
       modules = ALL_MODULES.filter(m => m !== "vw_estoque");
-      console.log(`[SyncV2 Create] Modo período: excluindo vw_estoque`);
+      console.log(`[SyncV2 Create] Modo período: excluindo vw_estoque. Módulos: ${modules.join(", ")}`);
     }
 
     // Criar SyncRun
@@ -56,7 +60,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log(`[SyncV2 Create] ✓ SyncRun criado: ${syncRun.id}, mode=${mode}, modules=${modules.length}`);
+    const range = startDate && endDate 
+      ? `range=${new Date(startDate).toISOString().slice(0, 10)}..${new Date(endDate).toISOString().slice(0, 10)}`
+      : "range=incremental";
+
+    console.log(
+      `[SyncV2 Create] ✓ RUN START runId=${syncRun.id} mode=${mode} ${range} modules=[${modules.join(", ")}]`
+    );
 
     return NextResponse.json({
       success: true,
@@ -66,7 +76,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Erro ao criar sync";
-    console.error("[SyncV2 Create] Erro:", error);
+    console.error(`[SyncV2 Create] ERROR requestId=${requestId} error="${errorMessage}"`);
     return NextResponse.json(
       { error: errorMessage },
       { status: 500 }

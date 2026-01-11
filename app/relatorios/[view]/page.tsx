@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 
 import { auth } from "@/auth";
-import SyncControlsInline from "@/components/sync-controls-lazy";
+import SyncControlsV2 from "@/components/sync-controls-v2-lazy";
 import { LogoutButton } from "@/components/logout-button";
 import { ReportTabs } from "@/components/report-tabs";
 import { SyncEmptyState } from "@/components/sync-empty-state";
@@ -213,8 +213,8 @@ export default async function ReportPage({
 
               {/* Controles de Ação */}
               <div className="flex items-center gap-2">
-                {/* Sincronização Inline */}
-                <SyncControlsInline
+                {/* Sincronização V2 (Resumable) */}
+                <SyncControlsV2
                   companyId={selectedCompanyId}
                   lastSync={
                     lastSync

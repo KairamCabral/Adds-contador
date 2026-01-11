@@ -18,7 +18,13 @@ import {
   listContasRecebidas,
 } from "@/lib/tiny/api";
 import { loadProdutoCacheMap, pickCategoriaFromCache } from "@/lib/tiny/produto-cache";
-import { transformPedidoDetalheToVendas } from "@/lib/tiny/transformers";
+import { 
+  transformPedidoDetalheToVendas,
+  transformContaReceberToPosicao,
+  transformContaPagarToView,
+  transformContaPagaToView,
+  transformContaRecebidaToView,
+} from "@/lib/tiny/transformers";
 
 export type ChunkResult = {
   processed: number;
@@ -186,11 +192,20 @@ export async function processContasReceberChunk(
       return { processed: 0, cursor: {}, done: true };
     }
 
-    // Processar e salvar (implementação simplificada - adaptar conforme transformer)
+    // Processar e salvar
     let processed = 0;
     for (const item of result.itens) {
-      // TODO: Usar transformer apropriado
-      processed++;
+      try {
+        const contaData = transformContaReceberToPosicao(companyId, item);
+        await prisma.vwContasReceberPosicao.upsert({
+          where: { id: contaData.id as string },
+          create: contaData,
+          update: contaData,
+        });
+        processed++;
+      } catch (err) {
+        console.warn(`[ChunkContasReceber] Erro ao processar conta ${item.id}:`, err);
+      }
     }
 
     const hasMore = result.numero_paginas && currentPage < result.numero_paginas;
@@ -222,8 +237,53 @@ export async function processContasPagarChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
-  // Implementação similar a ContasReceber
-  return { processed: 0, cursor: {}, done: true };
+  try {
+    const currentPage = (cursor.page as number) || 1;
+
+    console.log(`[ChunkContasPagar] Processando página ${currentPage}`);
+
+    const result = await listContasPagar(connection, startDate, endDate, currentPage);
+
+    if (!result.itens || result.itens.length === 0) {
+      console.log(`[ChunkContasPagar] ✓ Nenhum item na página ${currentPage}`);
+      return { processed: 0, cursor: {}, done: true };
+    }
+
+    // Processar e salvar
+    let processed = 0;
+    for (const item of result.itens) {
+      try {
+        const contaData = transformContaPagarToView(companyId, item);
+        await prisma.vwContasPagar.upsert({
+          where: { id: contaData.id as string },
+          create: contaData,
+          update: contaData,
+        });
+        processed++;
+      } catch (err) {
+        console.warn(`[ChunkContasPagar] Erro ao processar conta ${item.id}:`, err);
+      }
+    }
+
+    const hasMore = result.numero_paginas && currentPage < result.numero_paginas;
+
+    console.log(`[ChunkContasPagar] ✓ ${processed} itens processados. Página ${currentPage}/${result.numero_paginas || 1}`);
+
+    return {
+      processed,
+      cursor: { page: currentPage + 1 },
+      done: !hasMore,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[ChunkContasPagar] Erro:`, errorMsg);
+    return {
+      processed: 0,
+      cursor,
+      done: false,
+      error: errorMsg,
+    };
+  }
 }
 
 export async function processContasPagasChunk(
@@ -233,8 +293,53 @@ export async function processContasPagasChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
-  // Implementação similar
-  return { processed: 0, cursor: {}, done: true };
+  try {
+    const currentPage = (cursor.page as number) || 1;
+
+    console.log(`[ChunkContasPagas] Processando página ${currentPage}`);
+
+    const result = await listContasPagas(connection, startDate, endDate, currentPage);
+
+    if (!result.itens || result.itens.length === 0) {
+      console.log(`[ChunkContasPagas] ✓ Nenhum item na página ${currentPage}`);
+      return { processed: 0, cursor: {}, done: true };
+    }
+
+    // Processar e salvar
+    let processed = 0;
+    for (const item of result.itens) {
+      try {
+        const contaData = transformContaPagaToView(companyId, item);
+        await prisma.vwContasPagas.upsert({
+          where: { id: contaData.id as string },
+          create: contaData,
+          update: contaData,
+        });
+        processed++;
+      } catch (err) {
+        console.warn(`[ChunkContasPagas] Erro ao processar conta ${item.id}:`, err);
+      }
+    }
+
+    const hasMore = result.numero_paginas && currentPage < result.numero_paginas;
+
+    console.log(`[ChunkContasPagas] ✓ ${processed} itens processados. Página ${currentPage}/${result.numero_paginas || 1}`);
+
+    return {
+      processed,
+      cursor: { page: currentPage + 1 },
+      done: !hasMore,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[ChunkContasPagas] Erro:`, errorMsg);
+    return {
+      processed: 0,
+      cursor,
+      done: false,
+      error: errorMsg,
+    };
+  }
 }
 
 export async function processContasRecebidasChunk(
@@ -244,6 +349,51 @@ export async function processContasRecebidasChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
-  // Implementação similar
-  return { processed: 0, cursor: {}, done: true };
+  try {
+    const currentPage = (cursor.page as number) || 1;
+
+    console.log(`[ChunkContasRecebidas] Processando página ${currentPage}`);
+
+    const result = await listContasRecebidas(connection, startDate, endDate, currentPage);
+
+    if (!result.itens || result.itens.length === 0) {
+      console.log(`[ChunkContasRecebidas] ✓ Nenhum item na página ${currentPage}`);
+      return { processed: 0, cursor: {}, done: true };
+    }
+
+    // Processar e salvar
+    let processed = 0;
+    for (const item of result.itens) {
+      try {
+        const contaData = transformContaRecebidaToView(companyId, item);
+        await prisma.vwContasRecebidas.upsert({
+          where: { id: contaData.id as string },
+          create: contaData,
+          update: contaData,
+        });
+        processed++;
+      } catch (err) {
+        console.warn(`[ChunkContasRecebidas] Erro ao processar conta ${item.id}:`, err);
+      }
+    }
+
+    const hasMore = result.numero_paginas && currentPage < result.numero_paginas;
+
+    console.log(`[ChunkContasRecebidas] ✓ ${processed} itens processados. Página ${currentPage}/${result.numero_paginas || 1}`);
+
+    return {
+      processed,
+      cursor: { page: currentPage + 1 },
+      done: !hasMore,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`[ChunkContasRecebidas] Erro:`, errorMsg);
+    return {
+      processed: 0,
+      cursor,
+      done: false,
+      error: errorMsg,
+    };
+  }
 }

@@ -90,7 +90,13 @@ export async function POST(request: NextRequest) {
       });
 
       const durationMs = Date.now() - startTime;
-      console.log(`[SyncV2 Step] ✓ Sync finalizado: ${runId} em ${durationMs}ms`);
+      const totalDurationMs = syncRun.startedAt 
+        ? Date.now() - syncRun.startedAt.getTime()
+        : durationMs;
+
+      console.log(
+        `[SyncV2 Step] RUN END status=success runId=${runId} totalDurationMs=${totalDurationMs}`
+      );
 
       return NextResponse.json({
         success: true,
@@ -103,7 +109,7 @@ export async function POST(request: NextRequest) {
     const currentModule = syncRun.modules[syncRun.moduleIndex];
     const cursor = (syncRun.cursor as Record<string, unknown>) || {};
 
-    console.log(`[SyncV2 Step] Processando módulo ${currentModule} (${syncRun.moduleIndex + 1}/${syncRun.modules.length})`);
+    console.log(`[SyncV2 Step] STEP START module=${currentModule} (${syncRun.moduleIndex + 1}/${syncRun.modules.length}) runId=${runId}`);
 
     // Processar chunk baseado no módulo
     let result;
@@ -193,6 +199,14 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const totalDurationMs = syncRun.startedAt 
+        ? Date.now() - syncRun.startedAt.getTime()
+        : Date.now() - startTime;
+
+      console.error(
+        `[SyncV2 Step] RUN END status=error runId=${runId} module=${currentModule} error="${result.error}" totalDurationMs=${totalDurationMs}`
+      );
+
       return NextResponse.json({
         success: false,
         status: "ERROR",
@@ -216,7 +230,9 @@ export async function POST(request: NextRequest) {
     const durationMs = Date.now() - startTime;
     const totalProgress = Math.floor((newModuleIndex / syncRun.modules.length) * 100);
 
-    console.log(`[SyncV2 Step] ✓ Step concluído em ${durationMs}ms. Módulo: ${currentModule}, Processados: ${result.processed}, Done: ${result.done}, Progress: ${totalProgress}%`);
+    console.log(
+      `[SyncV2 Step] STEP END module=${currentModule} processed=${result.processed} done=${result.done} tookMs=${durationMs} progress=${totalProgress}%`
+    );
 
     return NextResponse.json({
       success: true,
@@ -228,6 +244,7 @@ export async function POST(request: NextRequest) {
       totalModules: syncRun.modules.length,
       overallProgress: totalProgress,
       durationMs,
+      hasMore: newModuleIndex < syncRun.modules.length,
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Erro ao executar step";
