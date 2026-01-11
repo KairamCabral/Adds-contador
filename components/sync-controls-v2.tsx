@@ -29,7 +29,7 @@ export function SyncControlsV2({ companyId, lastSync }: Props) {
     setError(null);
 
     try {
-      let body: Record<string, unknown> = {
+      const body: Record<string, unknown> = {
         companyId,
         syncMode: mode === "quick" ? "incremental" : "period",
       };

@@ -5,16 +5,17 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/auth";
+import { auth } from "@/auth";
+import { userHasRole } from "@/lib/authz";
+import { Role } from "@prisma/client";
 import { cancelSyncRun } from "@/lib/sync/executor";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const session = await auth();
+    if (!userHasRole(session, [Role.ADMIN, Role.OPERADOR])) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
@@ -31,12 +32,13 @@ export async function POST(req: NextRequest) {
       success: true,
       message: "Sincronização cancelada",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
     console.error("[Sync Cancel] Erro:", error);
     return NextResponse.json(
       {
         error: "Erro ao cancelar sincronização",
-        details: error.message,
+        details: errorMessage,
       },
       { status: 500 }
     );

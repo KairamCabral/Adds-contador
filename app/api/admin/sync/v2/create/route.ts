@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         moduleIndex: 0,
         cursor: {},
         progressJson: {},
-        triggeredByUserId: session.user.id,
+        triggeredByUserId: session?.user?.id || null,
       },
     });
 

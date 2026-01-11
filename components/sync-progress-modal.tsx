@@ -214,32 +214,32 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-700 mb-3">Módulos:</h3>
             {moduleKeys.map((key) => {
-              const module = modules[key];
+              const moduleData = modules[key];
               return (
                 <div
                   key={key}
                   className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                 >
                   <div className="flex items-center gap-3">
-                    {getStatusIcon(module.status)}
+                    {getStatusIcon(moduleData.status)}
                     <div>
                       <div className="font-medium text-sm">
                         {MODULE_NAMES[key] || key}
                       </div>
-                      {module.status === "done" && (
+                      {moduleData.status === "done" && (
                         <div className="text-xs text-gray-600">
-                          {module.processed} processados
-                          {module.skipped ? `, ${module.skipped} pulados` : ""}
+                          {moduleData.processed} processados
+                          {moduleData.skipped ? `, ${moduleData.skipped} pulados` : ""}
                         </div>
                       )}
-                      {module.status === "failed" && module.errors && (
+                      {moduleData.status === "failed" && moduleData.errors && (
                         <div className="text-xs text-red-600">
-                          {module.errors[0]}
+                          {moduleData.errors[0]}
                         </div>
                       )}
                     </div>
                   </div>
-                  {module.status === "running" && (
+                  {moduleData.status === "running" && (
                     <span className="text-xs text-blue-600 animate-pulse">
                       Executando...
                     </span>

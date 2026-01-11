@@ -42,31 +42,21 @@ export async function GET(request: NextRequest) {
       status: true,
       startedAt: true,
       finishedAt: true,
-      stats: true,
     },
   });
 
   // Última sync para polling
   const lastSync = recentSyncs[0] || null;
   
-  // Extrair stats se disponível
-  let syncStats = null;
-  if (lastSync?.stats) {
-    try {
-      syncStats = typeof lastSync.stats === 'string' 
-        ? JSON.parse(lastSync.stats) 
-        : lastSync.stats;
-    } catch {
-      // Ignorar erro de parse
-    }
-  }
+  // Stats removidos - não mais necessários
+  const syncStats = null;
 
   return NextResponse.json({
     stuck: runningSyncs.map((r) => ({
       id: r.id,
       companyId: r.companyId,
       startedAt: r.startedAt,
-      elapsedMinutes: Math.floor((Date.now() - r.startedAt.getTime()) / 60000),
+      elapsedMinutes: r.startedAt ? Math.floor((Date.now() - r.startedAt.getTime()) / 60000) : 0,
     })),
     recent: recentSyncs,
     lastSync: lastSync ? {

@@ -118,7 +118,7 @@ export async function preEnrichPeriodProducts(
           timeMs: Date.now() - startTime,
           message: `Pre-enrichment concluído: ${enriched} produtos enriquecidos`,
         };
-      } catch (err) {
+      } catch {
         console.warn(`[PreEnrich] Timeout ou erro no enrichment, continuando...`);
         // Continuar mesmo com erro
       }
@@ -140,7 +140,7 @@ export async function preEnrichPeriodProducts(
           ? `Muitos produtos faltando (${missing.length}), deixando para job diário`
           : `Cache suficiente (${cacheHitRate}% hit rate)`,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[PreEnrich] Erro:`, error.message);
     // Continuar mesmo com erro
     return {

@@ -104,7 +104,7 @@ export async function registerPendingProducts(
         create: stub,
         update: {}, // Não atualizar se já existe
       });
-    } catch (err) {
+    } catch {
       // Ignorar erros (pode ser conflito de concorrência)
     }
   }

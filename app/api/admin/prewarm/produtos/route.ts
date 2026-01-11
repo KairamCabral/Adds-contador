@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
 
       const recentProducts = await prisma.vwVendas.groupBy({
-        by: ['produtoId'],
+        by: ['produto'],
         where: {
           companyId: company.id,
           dataHora: {
@@ -71,11 +71,11 @@ export async function POST(request: NextRequest) {
           },
         },
         _count: {
-          produtoId: true,
+          produto: true,
         },
         orderBy: {
           _count: {
-            produtoId: 'desc',
+            produto: 'desc',
           },
         },
         take: 200, // Top 200 produtos mais vendidos
@@ -87,7 +87,16 @@ export async function POST(request: NextRequest) {
       }
 
       const produtoIds = recentProducts
-        .map(p => p.produtoId)
+        .map(p => {
+          const produto = p.produto;
+          if (!produto) return null;
+          // Converter string para BigInt
+          try {
+            return BigInt(produto);
+          } catch {
+            return null;
+          }
+        })
         .filter((id): id is bigint => id !== null);
 
       console.log(`[Prewarm] ${company.name}: ${produtoIds.length} produtos vendidos recentemente`);
@@ -141,15 +150,17 @@ export async function POST(request: NextRequest) {
         try {
           // Rate limiter garante 1 req/seg e retry em 429
           const produto = await rateLimiter.execute(
-            () => getProdutoDetalhe(connection, Number(produtoId)),
-            `produto-${produtoId}`
+            () => getProdutoDetalhe(connection, Number(produtoId))
           );
 
-          // Extrair categoria
-          const categoriaNome = produto.categoria?.descricao || null;
-          const categoriaCaminhoCompleto = produto.categoria?.caminho_completo || 
-                                          produto.categoria?.descricao || 
-                                          null;
+          // Extrair categoria com type guard
+          const produtoData = produto as Record<string, unknown>;
+          const categoria = produtoData.categoria as Record<string, unknown> | undefined;
+          const categoriaNome = categoria?.descricao as string | undefined || null;
+          const categoriaCaminhoCompleto = 
+            (categoria?.caminho_completo as string | undefined) || 
+            (categoria?.descricao as string | undefined) || 
+            null;
 
           // Salvar no cache
           await prisma.tinyProdutoCache.upsert({
@@ -162,14 +173,14 @@ export async function POST(request: NextRequest) {
             create: {
               companyId: company.id,
               produtoId: produtoId,
-              sku: produto.codigo || null,
-              descricao: produto.nome || `Produto ${produtoId}`,
+              sku: (produtoData.codigo as string | undefined) || null,
+              descricao: (produtoData.nome as string | undefined) || `Produto ${produtoId}`,
               categoriaNome,
               categoriaCaminhoCompleto,
             },
             update: {
-              sku: produto.codigo || null,
-              descricao: produto.nome || `Produto ${produtoId}`,
+              sku: (produtoData.codigo as string | undefined) || null,
+              descricao: (produtoData.nome as string | undefined) || `Produto ${produtoId}`,
               categoriaNome,
               categoriaCaminhoCompleto,
               updatedAt: new Date(),

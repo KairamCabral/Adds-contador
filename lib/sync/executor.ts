@@ -57,8 +57,8 @@ export async function createSyncRun(params: {
     modules: {},
   };
 
-  for (const module of SYNC_MODULES) {
-    progressJson.modules[module] = {
+  for (const moduleName of SYNC_MODULES) {
+    progressJson.modules[moduleName] = {
       status: "pending",
       processed: 0,
     };
@@ -149,7 +149,7 @@ export async function startSyncRun(runId: string) {
             null
           );
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Não bloquear sync se pre-enrichment falhar
         await addLog(
           runId,
@@ -285,7 +285,7 @@ export async function runSyncStep(runId: string): Promise<boolean> {
 
     // Ainda há módulos pendentes
     return SYNC_MODULES.some((mod) => progress.modules[mod]?.status === "pending");
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Marcar módulo como falho mas continuar
     progress.modules[nextModule] = {
       status: "failed",
@@ -378,7 +378,7 @@ async function addLog(
   level: "info" | "warn" | "error",
   message: string,
   module: string | null,
-  metadata?: any
+  metadata?: Record<string, unknown>
 ) {
   await prisma.syncRunLog.create({
     data: {

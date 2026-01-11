@@ -169,7 +169,7 @@ export default async function ConexoesTinyPage({
                           )}
                         </td>
                         <td className="px-4 py-3 text-slate-300">
-                          {lastSync
+                          {lastSync && lastSync.startedAt
                             ? `${lastSync.status} em ${new Date(
                                 lastSync.startedAt,
                               ).toLocaleString("pt-BR")}`

@@ -109,7 +109,7 @@ export async function getProdutosInfo(
       }
 
       // Extrair informações do produto (estrutura pode variar)
-      const produtoData = produto as any;
+      const produtoData = produto as Record<string, unknown>;
       
       const info: ProdutoInfo = {
         produtoId,
@@ -151,7 +151,7 @@ export async function getProdutosInfo(
       console.log(
         `[ProdutoCache] ✓ Produto ${produtoId} enriquecido e cacheado (${enriched.length}/${toEnrich.length})`
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(
         `[ProdutoCache] ✗ Erro ao enriquecer produto ${produtoId}:`,
         error.message

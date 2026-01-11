@@ -105,12 +105,13 @@ export async function POST(req: NextRequest) {
 
         // Pequeno delay entre empresas
         await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (error: any) {
-        console.error(`[EnrichProdutos] Erro na empresa ${company.name}:`, error.message);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+        console.error(`[EnrichProdutos] Erro na empresa ${company.name}:`, errorMessage);
         results.push({
           companyId: company.id,
           companyName: company.name,
-          error: error.message,
+          error: errorMessage,
         });
       }
     }
@@ -120,12 +121,13 @@ export async function POST(req: NextRequest) {
       message: "Enrichment em background concluído",
       results,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
     console.error("[EnrichProdutos] Erro:", error);
     return NextResponse.json(
       {
         error: "Erro ao enriquecer produtos",
-        details: error.message,
+        details: errorMessage,
       },
       { status: 500 }
     );

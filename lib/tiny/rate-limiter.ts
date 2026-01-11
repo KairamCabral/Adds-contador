@@ -30,7 +30,7 @@ interface QueuedRequest<T> {
 
 export class TinyRateLimiter {
   private config: RateLimiterConfig;
-  private queue: QueuedRequest<any>[] = [];
+  private queue: QueuedRequest<unknown>[] = [];
   private activeRequests = 0;
   private lastRequestTime = 0;
 
@@ -97,7 +97,7 @@ export class TinyRateLimiter {
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
       try {
         return await fn();
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
 
         // Se não for 429, não tentar novamente

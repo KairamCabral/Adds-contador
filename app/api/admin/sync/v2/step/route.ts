@@ -177,11 +177,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Atualizar progresso
-    const progressJson = (syncRun.progressJson as Record<string, any>) || {};
-    if (!progressJson[currentModule]) {
-      progressJson[currentModule] = { processed: 0 };
-    }
-    progressJson[currentModule].processed += result.processed;
+    const progressJson = (syncRun.progressJson as Record<string, unknown>) || {};
+    
+    // Type guard para acessar propriedades
+    const moduleProgress = progressJson[currentModule];
+    const currentProcessed = 
+      moduleProgress && 
+      typeof moduleProgress === 'object' && 
+      'processed' in moduleProgress &&
+      typeof moduleProgress.processed === 'number'
+        ? moduleProgress.processed
+        : 0;
+    
+    progressJson[currentModule] = { 
+      processed: currentProcessed + result.processed 
+    };
 
     // Se o módulo terminou, avançar para o próximo
     const newModuleIndex = result.done ? syncRun.moduleIndex + 1 : syncRun.moduleIndex;
