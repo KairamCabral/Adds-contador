@@ -22,10 +22,13 @@ enum Role {
 
 /// Status de execuções de sincronização.
 enum SyncStatus {
-  PENDING
+  PENDING   // Legacy - será migrado para QUEUED
+  QUEUED
   RUNNING
-  SUCCESS
+  SUCCESS   // Legacy - será migrado para DONE
+  DONE
   FAILED
+  CANCELED
 }
 
 /// Ações auditadas.
@@ -100,19 +103,40 @@ model TinyConnection {
 }
 
 model SyncRun {
-  id                String     @id @default(uuid())
+  id                String       @id @default(uuid())
   companyId         String
-  status            SyncStatus
-  startedAt         DateTime   @default(now())
-  finishedAt        DateTime?
+  mode              String       @default("incremental") // "incremental" | "period"
+  startDate         DateTime?
+  endDate           DateTime?
+  status            SyncStatus   @default(QUEUED)
+  currentModule     String?
+  progressJson      Json? // { modules: { [key]: { status, processed, errors } } }
   errorMessage      String?
-  stats             Json?
+  createdAt         DateTime     @default(now())
+  startedAt         DateTime?
+  finishedAt        DateTime?
   triggeredByUserId String?
-  company           Company    @relation(fields: [companyId], references: [id])
-  triggeredByUser   User?      @relation("SyncTriggeredBy", fields: [triggeredByUserId], references: [id])
+  company           Company      @relation(fields: [companyId], references: [id])
+  triggeredByUser   User?        @relation("SyncTriggeredBy", fields: [triggeredByUserId], references: [id])
+  logs              SyncRunLog[]
 
-  @@index([companyId, startedAt])
+  @@index([companyId, createdAt])
   @@index([status])
+  @@index([companyId, status])
+}
+
+model SyncRunLog {
+  id        String   @id @default(uuid())
+  runId     String
+  timestamp DateTime @default(now())
+  level     String // "info" | "warn" | "error"
+  message   String
+  module    String?
+  metadata  Json?
+  run       SyncRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, timestamp])
+  @@index([runId, level])
 }
 
 model SyncCursor {

@@ -1347,3 +1347,18 @@ export async function runSync(options: SyncOptions) {
 
   return { runIds, results };
 }
+
+// ============================================
+// EXPORTS PARA EXECUTOR RESUMABLE
+// ============================================
+
+export {
+  syncVendas,
+  syncContasReceberPosicao,
+  syncContasPagar,
+  syncContasPagas,
+  syncContasRecebidas,
+  syncEstoque,
+};
+
+export type { ModuleResult };
