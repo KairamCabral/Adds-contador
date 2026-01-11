@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (syncRun.status === "DONE" || syncRun.status === "ERROR" || syncRun.status === "CANCELLED") {
+    if (syncRun.status === "DONE" || syncRun.status === "FAILED" || syncRun.status === "CANCELED") {
       return NextResponse.json({
         success: false,
         message: `Sync já finalizado com status: ${syncRun.status}`,

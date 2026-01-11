@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { userHasRole } from "@/lib/authz";
-import { Role } from "@prisma/client";
+import { Role, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   processVendasChunk,
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       await prisma.syncRun.update({
         where: { id: runId },
         data: {
-          status: "ERROR",
+          status: "FAILED",
           errorMessage: "Sem conexão Tiny",
           finishedAt: new Date(),
         },
@@ -148,23 +148,11 @@ export async function POST(request: NextRequest) {
         break;
 
       case "vw_contas_pagas":
-        result = await processContasPagasChunk(
-          syncRun.companyId,
-          connection,
-          startDate,
-          endDate,
-          cursor
-        );
+        result = await processContasPagasChunk();
         break;
 
       case "vw_contas_recebidas":
-        result = await processContasRecebidasChunk(
-          syncRun.companyId,
-          connection,
-          startDate,
-          endDate,
-          cursor
-        );
+        result = await processContasRecebidasChunk();
         break;
 
       default:
@@ -202,9 +190,9 @@ export async function POST(request: NextRequest) {
       await prisma.syncRun.update({
         where: { id: runId },
         data: {
-          status: "ERROR",
+          status: "FAILED",
           errorMessage: result.error,
-          progressJson,
+          progressJson: progressJson as unknown as Prisma.InputJsonValue,
           finishedAt: new Date(),
         },
       });
@@ -229,8 +217,8 @@ export async function POST(request: NextRequest) {
       where: { id: runId },
       data: {
         moduleIndex: newModuleIndex,
-        cursor: newCursor,
-        progressJson,
+        cursor: newCursor as unknown as Prisma.InputJsonValue,
+        progressJson: progressJson as unknown as Prisma.InputJsonValue,
         currentModule: newModuleIndex < syncRun.modules.length 
           ? syncRun.modules[newModuleIndex] 
           : null,
@@ -268,7 +256,7 @@ export async function POST(request: NextRequest) {
         await prisma.syncRun.update({
           where: { id: runId },
           data: {
-            status: "ERROR",
+            status: "FAILED",
             errorMessage,
             finishedAt: new Date(),
           },

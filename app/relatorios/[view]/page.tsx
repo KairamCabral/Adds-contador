@@ -198,7 +198,7 @@ export default async function ReportPage({
                       <>
                         <span className="text-slate-700">•</span>
                         <span>
-                          Sync: {new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
+                          Sync: {lastSync.startedAt && new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
                             day: "2-digit", 
                             month: "2-digit", 
                             hour: "2-digit", 
@@ -217,7 +217,7 @@ export default async function ReportPage({
                 <SyncControlsV2
                   companyId={selectedCompanyId}
                   lastSync={
-                    lastSync
+                    lastSync && lastSync.startedAt
                       ? {
                           date: lastSync.startedAt,
                           status: lastSync.status,

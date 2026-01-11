@@ -89,7 +89,7 @@ export async function processVendasChunk(
 
     for (const pedido of chunkPedidos) {
       try {
-        const detalhe = await getPedido(connection, pedido.id);
+        const detalhe = await getPedido(connection, Number(pedido.id));
         const pedidoTipado = detalhe as TinyPedidoDetalhe;
         pedidosDetalhados.push(pedidoTipado);
 

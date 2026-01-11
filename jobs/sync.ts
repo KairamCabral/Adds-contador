@@ -110,7 +110,6 @@ const finishRun = async (
       status,
       finishedAt: new Date(),
       errorMessage,
-      stats: stats.length ? stats : undefined,
     },
   });
 };
@@ -1058,7 +1057,7 @@ const syncEstoque = async (
         console.log(`[Sync ${module}] Processando página ${pagina}: ${response.itens.length} produtos`);
         
         // Decidir se faz enrichment
-        const skipEnrichment = options?.mode === "period";
+        const skipEnrichment = (options as {mode?: "period" | "incremental"})?.mode === "period";
         
         if (skipEnrichment) {
           console.log(`[Sync ${module}] ⚡ Modo PERÍODO: SEM enrichment (usando dados da lista)`);
