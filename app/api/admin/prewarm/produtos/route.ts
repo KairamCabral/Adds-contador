@@ -1,207 +1,232 @@
-/**
- * POST /api/admin/prewarm/produtos
- * 
- * Job diário de "prewarm" do cache de produtos.
- * 
- * Objetivo:
- * - Buscar produtos que apareceram em vendas nos últimos 7-14 dias
- * - Enriquecer produtos que não estão no cache ou estão desatualizados
- * - Manter cache sempre aquecido para sync mensal
- * 
- * Resultado:
- * - 99% das categorias aparecem preenchidas no sync mensal
- * - Zero chamadas a /produtos/{id} durante sync de período
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getProdutosInfo } from "@/lib/tiny/produto-cache";
+import { getProdutoDetalhe } from "@/lib/tiny/api";
+import { getTinyRateLimiter } from "@/lib/tiny/rate-limiter";
 
-export const dynamic = "force-dynamic";
-export const maxDuration = 300; // 5 minutos
+/**
+ * Cron de prewarm: aquece cache de produtos mais usados
+ * 
+ * Estratégia:
+ * - Busca produtos vendidos nos últimos 14 dias
+ * - Filtra os que não estão no cache ou estão expirados (> 30 dias)
+ * - Enriquece no máximo 50 produtos por execução
+ * - Rate limit: 1 req/seg, retry em 429
+ * 
+ * Resultado esperado:
+ * - Cache 99%+ aquecido após alguns dias
+ * - Zero chamadas /produtos/{id} no sync manual
+ */
 
-export async function POST(req: NextRequest) {
+// Autenticação via CRON_SECRET
+function isCronRequest(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const authHeader = req.headers.get("authorization");
+  return authHeader === `Bearer ${secret}`;
+}
+
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  // Verificar autenticação
+  if (!isCronRequest(request)) {
+    console.error("[Prewarm] Acesso negado: CRON_SECRET inválido");
+    return NextResponse.json({ error: "Proibido" }, { status: 403 });
+  }
+
+  console.log("[Prewarm] 🔥 Iniciando prewarm de produtos...");
+
   try {
-    // Verificar autenticação (cron secret ou admin)
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
-      // Autenticado via cron
-    } else {
-      // TODO: Verificar se usuário é admin
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-    }
-
-    console.log("[Prewarm] Iniciando job de prewarm de produtos...");
-
-    // Buscar todas as empresas com conexão Tiny
+    // 1. Buscar todas as empresas com conexão Tiny
     const companies = await prisma.company.findMany({
-      where: {
-        connections: {
-          some: {},
-        },
-      },
       include: {
-        connections: true,
+        connections: {
+          take: 1,
+        },
       },
     });
 
-    console.log(`[Prewarm] Processando ${companies.length} empresas`);
-
-    const results = [];
+    let totalEnriched = 0;
+    let totalSkipped = 0;
 
     for (const company of companies) {
       const connection = company.connections[0];
-      if (!connection) continue;
-
-      try {
-        console.log(`[Prewarm] Empresa ${company.name} (${company.id})`);
-
-        // FASE 1: Buscar produtos únicos das vendas dos últimos 14 dias
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - 14);
-
-        const recentProducts = await prisma.$queryRaw<{ produto_id: bigint }[]>`
-          SELECT DISTINCT 
-            CAST(SUBSTRING("Produto" FROM 'ID:([0-9]+)') AS BIGINT) as produto_id
-          FROM vw_vendas
-          WHERE "companyId" = ${company.id}
-            AND "DataHora" >= ${cutoffDate}
-            AND "Produto" LIKE '%ID:%'
-            AND CAST(SUBSTRING("Produto" FROM 'ID:([0-9]+)') AS BIGINT) IS NOT NULL
-        `;
-
-        if (recentProducts.length === 0) {
-          console.log(`[Prewarm] Empresa ${company.name}: nenhum produto recente`);
-          results.push({
-            companyId: company.id,
-            companyName: company.name,
-            enriched: 0,
-            message: "Nenhum produto recente",
-          });
-          continue;
-        }
-
-        const allProductIds = recentProducts.map((p) => p.produto_id);
-        console.log(
-          `[Prewarm] Empresa ${company.name}: ${allProductIds.length} produtos únicos nos últimos 14 dias`
-        );
-
-        // FASE 2: Verificar quais produtos precisam ser enriquecidos
-        // (não estão no cache ou estão desatualizados > 30 dias)
-        const cacheDate = new Date();
-        cacheDate.setDate(cacheDate.getDate() - 30);
-
-        const needsEnrichment = await prisma.tinyProdutoCache.findMany({
-          where: {
-            companyId: company.id,
-            produtoId: { in: allProductIds },
-            OR: [
-              { categoriaNome: null },
-              { updatedAt: { lt: cacheDate } },
-            ],
-          },
-          select: { produtoId: true },
-        });
-
-        const needsEnrichmentIds = new Set(
-          needsEnrichment.map((p) => p.produtoId.toString())
-        );
-
-        // Adicionar produtos que não estão no cache
-        const cached = await prisma.tinyProdutoCache.findMany({
-          where: {
-            companyId: company.id,
-            produtoId: { in: allProductIds },
-          },
-          select: { produtoId: true },
-        });
-
-        const cachedIds = new Set(cached.map((p) => p.produtoId.toString()));
-        const missingIds = allProductIds.filter(
-          (id) => !cachedIds.has(id.toString())
-        );
-
-        for (const id of missingIds) {
-          needsEnrichmentIds.add(id.toString());
-        }
-
-        const toEnrichIds = Array.from(needsEnrichmentIds).map((id) => BigInt(id));
-
-        if (toEnrichIds.length === 0) {
-          console.log(`[Prewarm] Empresa ${company.name}: cache 100% atualizado`);
-          results.push({
-            companyId: company.id,
-            companyName: company.name,
-            enriched: 0,
-            total: allProductIds.length,
-            message: "Cache 100% atualizado",
-          });
-          continue;
-        }
-
-        console.log(
-          `[Prewarm] Empresa ${company.name}: ${toEnrichIds.length} produtos precisam ser enriquecidos`
-        );
-
-        // FASE 3: Enriquecer produtos (com limite conservador)
-        const maxEnrich = 50; // Limite conservador para job diário
-        const toEnrich = toEnrichIds.slice(0, maxEnrich);
-
-        console.log(
-          `[Prewarm] Empresa ${company.name}: enriquecendo ${toEnrich.length} produtos (limite: ${maxEnrich})`
-        );
-
-        const produtosMap = await getProdutosInfo(
-          company.id,
-          connection,
-          toEnrich,
-          {
-            maxEnrich: maxEnrich,
-          }
-        );
-
-        const enriched = Array.from(produtosMap.values()).filter((p) => !p.fromCache)
-          .length;
-
-        console.log(
-          `[Prewarm] Empresa ${company.name}: ${enriched} produtos enriquecidos`
-        );
-
-        results.push({
-          companyId: company.id,
-          companyName: company.name,
-          enriched,
-          total: allProductIds.length,
-          pending: toEnrichIds.length - toEnrich.length,
-        });
-
-        // Pequeno delay entre empresas
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (error: any) {
-        console.error(`[Prewarm] Erro na empresa ${company.name}:`, error.message);
-        results.push({
-          companyId: company.id,
-          companyName: company.name,
-          error: error.message,
-        });
+      if (!connection) {
+        console.log(`[Prewarm] ${company.name}: sem conexão Tiny, pulando`);
+        continue;
       }
+
+      console.log(`[Prewarm] Processando ${company.name}...`);
+
+      // 2. Identificar produtos mais usados nos últimos 14 dias
+      const fourteenDaysAgo = new Date();
+      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+      const recentProducts = await prisma.vwVendas.groupBy({
+        by: ['produtoId'],
+        where: {
+          companyId: company.id,
+          dataHora: {
+            gte: fourteenDaysAgo,
+          },
+        },
+        _count: {
+          produtoId: true,
+        },
+        orderBy: {
+          _count: {
+            produtoId: 'desc',
+          },
+        },
+        take: 200, // Top 200 produtos mais vendidos
+      });
+
+      if (recentProducts.length === 0) {
+        console.log(`[Prewarm] ${company.name}: nenhum produto vendido nos últimos 14 dias`);
+        continue;
+      }
+
+      const produtoIds = recentProducts
+        .map(p => p.produtoId)
+        .filter((id): id is bigint => id !== null);
+
+      console.log(`[Prewarm] ${company.name}: ${produtoIds.length} produtos vendidos recentemente`);
+
+      // 3. Verificar quais NÃO estão no cache ou estão expirados (> 30 dias)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const cachedProducts = await prisma.tinyProdutoCache.findMany({
+        where: {
+          companyId: company.id,
+          produtoId: {
+            in: produtoIds,
+          },
+          updatedAt: {
+            gte: thirtyDaysAgo, // Apenas os atualizados recentemente
+          },
+        },
+        select: {
+          produtoId: true,
+        },
+      });
+
+      const cachedIds = new Set(cachedProducts.map(p => p.produtoId.toString()));
+      const missingIds = produtoIds.filter(id => !cachedIds.has(id.toString()));
+
+      console.log(
+        `[Prewarm] ${company.name}: ${cachedIds.size} em cache válido, ${missingIds.length} faltando/expirados`
+      );
+
+      if (missingIds.length === 0) {
+        console.log(`[Prewarm] ${company.name}: cache já está quente ✓`);
+        totalSkipped += produtoIds.length;
+        continue;
+      }
+
+      // 4. Limitar a 50 produtos por empresa para não estourar rate limit
+      const MAX_ENRICH_PER_COMPANY = 50;
+      const toEnrich = missingIds.slice(0, MAX_ENRICH_PER_COMPANY);
+
+      console.log(
+        `[Prewarm] ${company.name}: enriquecendo ${toEnrich.length} produtos (limite: ${MAX_ENRICH_PER_COMPANY})`
+      );
+
+      // 5. Enriquecer com rate limiter
+      const rateLimiter = getTinyRateLimiter();
+      let enriched = 0;
+      let errors = 0;
+
+      for (const produtoId of toEnrich) {
+        try {
+          // Rate limiter garante 1 req/seg e retry em 429
+          const produto = await rateLimiter.execute(
+            () => getProdutoDetalhe(connection, Number(produtoId)),
+            `produto-${produtoId}`
+          );
+
+          // Extrair categoria
+          const categoriaNome = produto.categoria?.descricao || null;
+          const categoriaCaminhoCompleto = produto.categoria?.caminho_completo || 
+                                          produto.categoria?.descricao || 
+                                          null;
+
+          // Salvar no cache
+          await prisma.tinyProdutoCache.upsert({
+            where: {
+              companyId_produtoId: {
+                companyId: company.id,
+                produtoId: produtoId,
+              },
+            },
+            create: {
+              companyId: company.id,
+              produtoId: produtoId,
+              sku: produto.codigo || null,
+              descricao: produto.nome || `Produto ${produtoId}`,
+              categoriaNome,
+              categoriaCaminhoCompleto,
+            },
+            update: {
+              sku: produto.codigo || null,
+              descricao: produto.nome || `Produto ${produtoId}`,
+              categoriaNome,
+              categoriaCaminhoCompleto,
+              updatedAt: new Date(),
+            },
+          });
+
+          enriched++;
+
+          if (enriched % 10 === 0) {
+            console.log(`[Prewarm] ${company.name}: ${enriched}/${toEnrich.length} enriquecidos...`);
+          }
+        } catch (err) {
+          errors++;
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.warn(`[Prewarm] Erro ao enriquecer produto ${produtoId}: ${errorMsg.substring(0, 100)}`);
+          
+          // Se tiver muitos erros, parar
+          if (errors >= 5) {
+            console.error(`[Prewarm] ${company.name}: muitos erros (${errors}), abortando`);
+            break;
+          }
+        }
+      }
+
+      totalEnriched += enriched;
+      console.log(
+        `[Prewarm] ${company.name}: ✓ ${enriched} produtos enriquecidos, ${errors} erros`
+      );
     }
 
-    console.log("[Prewarm] Job concluído");
+    const durationMs = Date.now() - startTime;
+    const durationMin = Math.floor(durationMs / 60000);
+    const durationSec = Math.floor((durationMs % 60000) / 1000);
+
+    console.log(
+      `[Prewarm] 🎉 Concluído em ${durationMin}m ${durationSec}s. Total: ${totalEnriched} enriquecidos, ${totalSkipped} já em cache`
+    );
 
     return NextResponse.json({
       success: true,
-      message: "Prewarm concluído",
-      results,
+      totalCompanies: companies.length,
+      totalEnriched,
+      totalSkipped,
+      durationMs,
     });
-  } catch (error: any) {
-    console.error("[Prewarm] Erro:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Erro no prewarm";
+    const durationMs = Date.now() - startTime;
+
+    console.error("[Prewarm] ❌ Erro:", errorMessage);
+    console.error("[Prewarm] Stack:", error);
+
     return NextResponse.json(
       {
-        error: "Erro no prewarm de produtos",
-        details: error.message,
+        success: false,
+        error: errorMessage,
+        durationMs,
       },
       { status: 500 }
     );

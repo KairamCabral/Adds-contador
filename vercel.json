@@ -1,17 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/admin/sync",
-      "schedule": "0 3 * * *"
-    },
-    {
       "path": "/api/admin/prewarm/produtos",
-      "schedule": "0 2 * * *"
+      "schedule": "0 1 * * *",
+      "description": "Prewarm cache de produtos (01:00 diariamente)"
     },
     {
-      "path": "/api/admin/enrich/produtos",
-      "schedule": "0 4 * * *"
+      "path": "/api/admin/sync",
+      "schedule": "0 3 * * *",
+      "description": "Sync incremental automático (03:00 diariamente)"
     }
   ]
 }
+
 
