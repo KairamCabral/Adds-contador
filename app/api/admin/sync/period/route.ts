@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[Sync Period] Sincronizando ${companyId} de ${start.toISOString()} até ${end.toISOString()}`
+      `[Sync Period] Sincronizando ${companyId} de ${start.toISOString()} até ${end.toISOString()} (modo rápido: sem enrichment)`
     );
 
     const result = await runSync({
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       isCron: false,
       startDate: start,
       endDate: end,
+      skipEnrichment: true, // CRÍTICO: pular enrichment de produtos em sync de período
     });
 
     return NextResponse.json({ ok: true, runIds: result.runIds });

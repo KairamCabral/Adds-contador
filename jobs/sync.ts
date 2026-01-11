@@ -39,6 +39,7 @@ type SyncOptions = {
   startDate?: Date;
   endDate?: Date;
   modules?: SyncModule[];
+  skipEnrichment?: boolean; // Pular enrichment pesado (ex: sync de período)
 };
 
 type ModuleResult = {
@@ -206,7 +207,14 @@ const syncVendas = async (
     
     console.log(`[Sync ${module}] Encontrados ${pedidos.length} pedidos`);
 
-    // FASE 1: Coletar IDs únicos de produtos para enrichment
+    // Decidir se faz enrichment pesado (busca /produtos/{id} para categorias)
+    const skipEnrichment = options?.skipEnrichment || false;
+    
+    if (skipEnrichment) {
+      console.log(`[Sync ${module}] ⚡ Modo rápido: pulando enrichment de produtos (evita 429)`);
+    }
+
+    // FASE 1: Buscar detalhes dos pedidos e coletar IDs de produtos
     const produtoIds = new Set<number>();
     const pedidosDetalhados: (TinyPedidoDetalhe | null)[] = [];
     
@@ -215,7 +223,7 @@ const syncVendas = async (
         const detalhe = await getPedido(connection, pedido.id);
         pedidosDetalhados.push(detalhe);
         
-        // Coletar IDs de produtos
+        // Coletar IDs de produtos (mesmo em modo rápido, para estatísticas)
         if (detalhe.itens && Array.isArray(detalhe.itens)) {
           for (const item of detalhe.itens) {
             const produtoId = item?.produto?.id;
@@ -225,39 +233,46 @@ const syncVendas = async (
           }
         }
       } catch (err) {
-        console.warn(`[Sync] Falha ao buscar pedido ${pedido.id}, pulando enrichment`);
+        console.warn(`[Sync] Falha ao buscar pedido ${pedido.id}, pulando`);
         pedidosDetalhados.push(null); // Placeholder para manter índice
       }
     }
 
-    console.log(`[Sync ${module}] Enriquecendo ${produtoIds.size} produtos únicos...`);
-
-    // FASE 2: Buscar informações de produtos (categorias) em paralelo
+    // FASE 2: Enrichment de produtos (APENAS se não for modo rápido)
     const produtosEnriquecidos = new Map<number, any>();
-    const produtoIdsArray = Array.from(produtoIds);
     
-    // Buscar produtos com concorrência limitada (3 por vez, mais conservador)
-    for (let i = 0; i < produtoIdsArray.length; i += 3) {
-      const batch = produtoIdsArray.slice(i, i + 3);
-      const results = await Promise.allSettled(
-        batch.map(id => getProduto(connection, id))
-      );
+    if (!skipEnrichment) {
+      console.log(`[Sync ${module}] Enriquecendo ${produtoIds.size} produtos únicos...`);
       
-      results.forEach((result, idx) => {
-        if (result.status === 'fulfilled' && result.value) {
-          produtosEnriquecidos.set(batch[idx], result.value);
-        } else if (result.status === 'rejected') {
-          console.warn(`[Sync] Produto ${batch[idx]} falhou no enrichment:`, result.reason?.message || 'Unknown error');
+      const produtoIdsArray = Array.from(produtoIds);
+      
+      // Buscar produtos com concorrência limitada (3 por vez, mais conservador)
+      for (let i = 0; i < produtoIdsArray.length; i += 3) {
+        const batch = produtoIdsArray.slice(i, i + 3);
+        const results = await Promise.allSettled(
+          batch.map(id => getProduto(connection, id))
+        );
+        
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            produtosEnriquecidos.set(batch[idx], result.value);
+          } else if (result.status === 'rejected') {
+            console.warn(`[Sync] Produto ${batch[idx]} falhou no enrichment:`, result.reason?.message || 'Unknown error');
+          }
+        });
+        
+        // Delay maior entre batches para evitar rate limit 429 (600ms)
+        if (i + 3 < produtoIdsArray.length) {
+          await new Promise(resolve => setTimeout(resolve, 600));
         }
-      });
-      
-      // Delay maior entre batches para evitar rate limit 429 (600ms)
-      if (i + 3 < produtoIdsArray.length) {
-        await new Promise(resolve => setTimeout(resolve, 600));
       }
+
+      console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);
+    } else {
+      console.log(`[Sync ${module}] ⚡ ${produtoIds.size} produtos únicos detectados (sem enrichment)`);
     }
 
-    console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);// FASE 3: Processar cada pedido com enrichment
+    // FASE 3: Processar cada pedido (com ou sem enrichment)
     for (let i = 0; i < pedidosDetalhados.length; i++) {
       const detalhe = pedidosDetalhados[i];
       const pedido = pedidos[i];
@@ -1069,7 +1084,7 @@ const syncByModule = async (
   companyId: string,
   connection: TinyConnection,
   modules: SyncModule[] = ALL_MODULES,
-  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean; skipEnrichment?: boolean }
 ): Promise<ModuleResult[]> => {
   const results: ModuleResult[] = [];
   
@@ -1234,6 +1249,7 @@ export async function runSync(options: SyncOptions) {
           startDate: options.startDate,
           endDate: options.endDate,
           isCron: options.isCron,
+          skipEnrichment: options.skipEnrichment,
         }
       );
       const hasErrors = stats.some((s) => s.errors && s.errors.length > 0);
