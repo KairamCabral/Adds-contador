@@ -127,6 +127,7 @@ export async function processVendasChunk(
             ...item,
             produto: {
               ...item.produto,
+              id: produtoId, // Garantir que id seja number
               categoria: {
                 descricao: categoria,
                 caminho_completo: categoria,
@@ -137,7 +138,11 @@ export async function processVendasChunk(
 
         const vendasData = transformPedidoDetalheToVendas(
           companyId,
-          { ...detalhe, itens: enrichedItems }
+          { 
+            ...detalhe, 
+            id: Number(detalhe.id), // Converter id do pedido para number
+            itens: enrichedItems 
+          }
         );
 
         // Salvar cada venda
@@ -199,7 +204,11 @@ export async function processContasReceberChunk(
 
     console.log(`[ChunkContasReceber] Processando página ${currentPage}`);
 
-    const result = await listContasReceber(connection, startDate, endDate, currentPage);
+    const result = await listContasReceber(connection, {
+      pagina: currentPage,
+      dataInicial: startDate.toISOString().split('T')[0],
+      dataFinal: endDate.toISOString().split('T')[0],
+    });
 
     if (!result.itens || result.itens.length === 0) {
       console.log(`[ChunkContasReceber] ✓ Nenhum item na página ${currentPage}`);
@@ -256,7 +265,11 @@ export async function processContasPagarChunk(
 
     console.log(`[ChunkContasPagar] Processando página ${currentPage}`);
 
-    const result = await listContasPagar(connection, startDate, endDate, currentPage);
+    const result = await listContasPagar(connection, {
+      pagina: currentPage,
+      dataInicial: startDate.toISOString().split('T')[0],
+      dataFinal: endDate.toISOString().split('T')[0],
+    });
 
     if (!result.itens || result.itens.length === 0) {
       console.log(`[ChunkContasPagar] ✓ Nenhum item na página ${currentPage}`);

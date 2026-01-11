@@ -6,7 +6,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { SyncStatus } from "@prisma/client";
+import { SyncStatus, Prisma } from "@prisma/client";
 import {
   syncVendas,
   syncContasReceberPosicao,
@@ -71,12 +71,12 @@ export async function createSyncRun(params: {
       startDate,
       endDate,
       status: "QUEUED" as SyncStatus,
-      progressJson,
+      progressJson: progressJson as unknown as Prisma.InputJsonValue,
       triggeredByUserId,
     },
   });
 
-  await addLog(syncRun.id, "info", `Sync criado: mode=${mode}`, null);
+  await addLog(syncRun.id, "info", `Sync criado: mode=${syncMode}`, null);
 
   return syncRun;
 }
@@ -378,7 +378,7 @@ async function addLog(
   level: "info" | "warn" | "error",
   message: string,
   module: string | null,
-  metadata?: Record<string, unknown>
+  metadata?: unknown
 ) {
   await prisma.syncRunLog.create({
     data: {
