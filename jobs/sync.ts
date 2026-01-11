@@ -29,6 +29,7 @@ import {
 import { getProduto, clearCache, getCacheStats } from "@/lib/tiny/enrichment";
 import { getProdutosInfo } from "@/lib/tiny/produto-cache";
 import { getTinyRateLimiter } from "@/lib/tiny/rate-limiter";
+import { getCachedProdutosOnly, registerPendingProducts } from "@/lib/tiny/produto-cache-readonly";
 
 // ============================================
 // TIPOS
@@ -244,15 +245,66 @@ const syncVendas = async (
 
     console.log(`[Sync ${module}] ${produtoIds.size} produtos únicos detectados`);
 
-    // FASE 2: Enrichment de produtos com cache inteligente
+    // FASE 2: Obter informações de produtos
     const produtosInfo = new Map<number, any>();
     
-    if (!isPeriodSync && produtoIds.size > 0) {
+    if (isPeriodSync && produtoIds.size > 0) {
+      // MODO PERÍODO: SOMENTE CACHE (ZERO chamadas à API)
+      console.log(`[Sync ${module}] 🔒 Modo PERÍODO: usando APENAS cache (zero chamadas /produtos/{id})`);
+      
+      try {
+        const { cached, missing } = await getCachedProdutosOnly(
+          companyId,
+          Array.from(produtoIds)
+        );
+
+        // Converter produtos cacheados para formato esperado
+        for (const [id, info] of cached.entries()) {
+          produtosInfo.set(Number(id), {
+            id: Number(id),
+            codigo: info.sku,
+            nome: info.descricao,
+            categoria: {
+              descricao: info.categoriaNome || "N/D",
+              caminho_completo: info.categoriaCaminhoCompleto || "N/D",
+            },
+          });
+        }
+
+        // Produtos faltando: marcar como "Pendente"
+        for (const id of missing) {
+          produtosInfo.set(Number(id), {
+            id: Number(id),
+            codigo: undefined,
+            nome: `Produto ${id}`,
+            categoria: {
+              descricao: "Pendente",
+              caminho_completo: "Pendente",
+            },
+          });
+        }
+
+        // Registrar produtos pendentes para enriquecimento futuro
+        if (missing.length > 0) {
+          await registerPendingProducts(companyId, missing);
+        }
+
+        console.log(
+          `[Sync ${module}] ✓ ${cached.size} produtos do cache, ${missing.length} marcados como "Pendente"`
+        );
+      } catch (err) {
+        console.error(`[Sync ${module}] Erro ao consultar cache:`, err);
+        // Continuar sem informações de produtos
+      }
+    } else if (!isPeriodSync && produtoIds.size > 0) {
+      // MODO INCREMENTAL: Cache + enrichment limitado
+      console.log(`[Sync ${module}] 🔄 Modo INCREMENTAL: cache + enrichment limitado`);
+      
       try {
         // Usar sistema de cache inteligente
         const produtosMap = await getProdutosInfo(
           companyId,
-          connection, // Passar conexão completa
+          connection,
           Array.from(produtoIds),
           {
             maxEnrich: 50, // Limite de 50 produtos novos por sync incremental
@@ -282,8 +334,6 @@ const syncVendas = async (
         console.error(`[Sync ${module}] Erro no enrichment com cache:`, err);
         // Continuar sem enrichment em caso de erro
       }
-    } else if (isPeriodSync) {
-      console.log(`[Sync ${module}] ⚡ Enrichment pulado (modo período)`);
     }
 
     // FASE 3: Processar cada pedido

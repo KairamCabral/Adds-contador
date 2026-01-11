@@ -15,6 +15,7 @@ import {
   syncContasRecebidas,
   syncEstoque,
 } from "@/jobs/sync-modules";
+import { preEnrichPeriodProducts, shouldPreEnrich } from "./pre-enrichment";
 
 // Módulos na ordem de execução (P0 → P3)
 const SYNC_MODULES = [
@@ -84,7 +85,16 @@ export async function createSyncRun(params: {
  * Inicia a execução de um SyncRun
  */
 export async function startSyncRun(runId: string) {
-  const run = await prisma.syncRun.findUnique({ where: { id: runId } });
+  const run = await prisma.syncRun.findUnique({
+    where: { id: runId },
+    include: {
+      company: {
+        include: {
+          connections: true,
+        },
+      },
+    },
+  });
 
   if (!run) {
     throw new Error(`SyncRun ${runId} não encontrado`);
@@ -92,6 +102,63 @@ export async function startSyncRun(runId: string) {
 
   if (run.status !== "QUEUED") {
     throw new Error(`SyncRun ${runId} já foi iniciado (status: ${run.status})`);
+  }
+
+  // Pre-enrichment opcional para sync de período
+  if (run.mode === "period" && run.startDate && run.endDate) {
+    const connection = run.company.connections[0];
+    
+    if (connection) {
+      await addLog(
+        runId,
+        "info",
+        "Verificando necessidade de pre-enrichment...",
+        null
+      );
+
+      try {
+        // Verificar se vale a pena fazer pre-enrichment
+        const shouldEnrich = await shouldPreEnrich(
+          run.companyId,
+          run.startDate,
+          run.endDate
+        );
+
+        if (shouldEnrich) {
+          await addLog(runId, "info", "Iniciando pre-enrichment...", null);
+
+          const result = await preEnrichPeriodProducts(
+            run.companyId,
+            connection,
+            run.startDate,
+            run.endDate
+          );
+
+          await addLog(
+            runId,
+            "info",
+            `Pre-enrichment: ${result.enriched} produtos enriquecidos em ${result.timeMs}ms`,
+            null,
+            result
+          );
+        } else {
+          await addLog(
+            runId,
+            "info",
+            "Pre-enrichment dispensado (muitos produtos ou período longo)",
+            null
+          );
+        }
+      } catch (err: any) {
+        // Não bloquear sync se pre-enrichment falhar
+        await addLog(
+          runId,
+          "warn",
+          `Erro no pre-enrichment: ${err.message}`,
+          null
+        );
+      }
+    }
   }
 
   await prisma.syncRun.update({
