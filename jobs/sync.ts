@@ -202,13 +202,6 @@ const syncVendas = async (
     // Buscar pedidos
     let pedidos = await listAllPedidos(connection, dataInicial, dataFinal);
     
-    // Limitar pedidos em modo dev (quando datas específicas são fornecidas)
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    if (isDevMode && pedidos.length > 10) {
-      console.log(`[Sync ${module}] MODO DEV: Limitando de ${pedidos.length} para 10 pedidos`);
-      pedidos = pedidos.slice(0, 10);
-    }
-    
     console.log(`[Sync ${module}] Encontrados ${pedidos.length} pedidos`);
 
     // FASE 1: Coletar IDs únicos de produtos para enrichment
@@ -399,20 +392,13 @@ const syncContasReceberPosicao = async (
 
     console.log(
       `[Sync ${module}] Buscando contas a receber de ${dataInicial.toISOString()} até ${dataFinal.toISOString()}`
-    );// Buscar apenas contas abertas para posição
+    );    // Buscar apenas contas abertas para posição
     let contas = await listAllContasReceber(
       connection,
       dataInicial,
       dataFinal,
       "aberto"
     );
-    
-    // Limitar em modo dev
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    if (isDevMode && contas.length > 10) {
-      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
-      contas = contas.slice(0, 10);
-    }
     
     console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas`);
 
@@ -545,13 +531,6 @@ const syncContasPagar = async (
       "aberto"
     );
     
-    // Limitar em modo dev
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    if (isDevMode && contas.length > 10) {
-      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
-      contas = contas.slice(0, 10);
-    }
-    
     console.log(`[Sync ${module}] Encontradas ${contas.length} contas abertas. Buscando detalhes para enriquecer categorias...`);
 
     const contasEnriquecidas: (unknown | null)[] = [];
@@ -672,13 +651,6 @@ const syncContasPagas = async (
       dataFinal,
       "pago"
     );
-    
-    // Limitar em modo dev
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    if (isDevMode && contas.length > 10) {
-      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
-      contas = contas.slice(0, 10);
-    }
     
     console.log(`[Sync ${module}] Encontradas ${contas.length} contas pagas. Buscando detalhes para enriquecer...`);
     
@@ -811,12 +783,7 @@ const syncContasRecebidas = async (
       dataInicial,
       dataFinal,
       "pago"
-    );// Limitar em modo dev
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    if (isDevMode && contas.length > 10) {
-      console.log(`[Sync ${module}] MODO DEV: Limitando de ${contas.length} para 10 contas`);
-      contas = contas.slice(0, 10);
-    }console.log(`[Sync ${module}] Encontradas ${contas.length} contas recebidas. Buscando detalhes para enriquecer categorias...`);
+    );console.log(`[Sync ${module}] Encontradas ${contas.length} contas recebidas. Buscando detalhes para enriquecer categorias...`);
     
     // ENRICHMENT: Buscar detalhe de cada conta para obter categoria e outros campos completos
     const contasEnriquecidas: (unknown | null)[] = [];
@@ -938,19 +905,7 @@ const syncEstoque = async (
     // Estoque é um snapshot, sempre busca posição completa atual
     const now = new Date();
     const dataSnapshot = now;
-    
-    // Detectar modo dev
-    const isDevMode = options?.startDate && options?.endDate && !options?.isCron;
-    const maxPages = isDevMode ? 1 : Infinity; // Limitar a 1 página em modo dev (~50 produtos)
 
-    if (!isDevMode) {
-      console.log(`[Sync ${module}] Aguardando 5s para evitar rate limit...`);
-      await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos de pausa
-    } else {
-      console.log(`[Sync ${module}] MODO DEV: Pulando delay e limitando a ${maxPages} páginas`);
-    }
-
-    // CALCULAR SAÍDAS: Buscar vendas dos últimos 30 dias para calcular movimentações
     console.log(`[Sync ${module}] Calculando saídas a partir de vendas (últimos 30 dias)...`);
     const dataInicio = new Date(dataSnapshot);
     dataInicio.setDate(dataInicio.getDate() - 30);
@@ -1062,12 +1017,6 @@ const syncEstoque = async (
 
         // Verificar se há mais páginas
         hasMore = response.numero_paginas ? pagina < response.numero_paginas : response.itens.length >= 50;
-        
-        // Limitar páginas em modo dev
-        if (pagina >= maxPages) {
-          console.log(`[Sync ${module}] MODO DEV: Limite de ${maxPages} páginas atingido`);
-          hasMore = false;
-        }
         
         if (hasMore) {
           pagina++;
