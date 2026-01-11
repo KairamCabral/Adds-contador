@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       isCron: false,
       startDate: start,
       endDate: end,
-      skipEnrichment: true, // CRÍTICO: pular enrichment de produtos em sync de período
+      mode: "period", // CRÍTICO: pular enrichment de produtos em sync de período
     });
 
     return NextResponse.json({ ok: true, runIds: result.runIds });

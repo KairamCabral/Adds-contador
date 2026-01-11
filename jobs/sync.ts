@@ -27,6 +27,8 @@ import {
   transformProdutoToEstoque,
 } from "@/lib/tiny/transformers";
 import { getProduto, clearCache, getCacheStats } from "@/lib/tiny/enrichment";
+import { getProdutosInfo } from "@/lib/tiny/produto-cache";
+import { getTinyRateLimiter } from "@/lib/tiny/rate-limiter";
 
 // ============================================
 // TIPOS
@@ -39,7 +41,7 @@ type SyncOptions = {
   startDate?: Date;
   endDate?: Date;
   modules?: SyncModule[];
-  skipEnrichment?: boolean; // Pular enrichment pesado (ex: sync de período)
+  mode?: "incremental" | "period"; // Modo do sync: incremental (com enrichment limitado) ou period (sem enrichment)
 };
 
 type ModuleResult = {
@@ -168,7 +170,7 @@ const updateSyncCursor = async (
 const syncVendas = async (
   companyId: string,
   connection: TinyConnection,
-  options?: { startDate?: Date; endDate?: Date; isCron?: boolean }
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean; mode?: "incremental" | "period" }
 ): Promise<ModuleResult> => {
   const module = "vw_vendas";
   const errors: string[] = [];
@@ -207,15 +209,17 @@ const syncVendas = async (
     
     console.log(`[Sync ${module}] Encontrados ${pedidos.length} pedidos`);
 
-    // Decidir se faz enrichment pesado (busca /produtos/{id} para categorias)
-    const skipEnrichment = options?.skipEnrichment || false;
+    // Decidir estratégia de enrichment baseado no modo
+    const isPeriodSync = options?.mode === "period";
     
-    if (skipEnrichment) {
-      console.log(`[Sync ${module}] ⚡ Modo rápido: pulando enrichment de produtos (evita 429)`);
+    if (isPeriodSync) {
+      console.log(`[Sync ${module}] ⚡ Modo PERÍODO: SEM enrichment de produtos (evita 429)`);
+    } else {
+      console.log(`[Sync ${module}] 🔄 Modo INCREMENTAL: enrichment inteligente com cache`);
     }
 
     // FASE 1: Buscar detalhes dos pedidos e coletar IDs de produtos
-    const produtoIds = new Set<number>();
+    const produtoIds = new Set<bigint>();
     const pedidosDetalhados: (TinyPedidoDetalhe | null)[] = [];
     
     for (const pedido of pedidos) {
@@ -223,12 +227,12 @@ const syncVendas = async (
         const detalhe = await getPedido(connection, pedido.id);
         pedidosDetalhados.push(detalhe);
         
-        // Coletar IDs de produtos (mesmo em modo rápido, para estatísticas)
+        // Coletar IDs de produtos
         if (detalhe.itens && Array.isArray(detalhe.itens)) {
           for (const item of detalhe.itens) {
             const produtoId = item?.produto?.id;
-            if (produtoId && typeof produtoId === 'number') {
-              produtoIds.add(produtoId);
+            if (produtoId) {
+              produtoIds.add(BigInt(produtoId));
             }
           }
         }
@@ -238,53 +242,63 @@ const syncVendas = async (
       }
     }
 
-    // FASE 2: Enrichment de produtos (APENAS se não for modo rápido)
-    const produtosEnriquecidos = new Map<number, any>();
-    
-    if (!skipEnrichment) {
-      console.log(`[Sync ${module}] Enriquecendo ${produtoIds.size} produtos únicos...`);
-      
-      const produtoIdsArray = Array.from(produtoIds);
-      
-      // Buscar produtos com concorrência limitada (3 por vez, mais conservador)
-      for (let i = 0; i < produtoIdsArray.length; i += 3) {
-        const batch = produtoIdsArray.slice(i, i + 3);
-        const results = await Promise.allSettled(
-          batch.map(id => getProduto(connection, id))
-        );
-        
-        results.forEach((result, idx) => {
-          if (result.status === 'fulfilled' && result.value) {
-            produtosEnriquecidos.set(batch[idx], result.value);
-          } else if (result.status === 'rejected') {
-            console.warn(`[Sync] Produto ${batch[idx]} falhou no enrichment:`, result.reason?.message || 'Unknown error');
-          }
-        });
-        
-        // Delay maior entre batches para evitar rate limit 429 (600ms)
-        if (i + 3 < produtoIdsArray.length) {
-          await new Promise(resolve => setTimeout(resolve, 600));
-        }
-      }
+    console.log(`[Sync ${module}] ${produtoIds.size} produtos únicos detectados`);
 
-      console.log(`[Sync ${module}] ${produtosEnriquecidos.size}/${produtoIds.size} produtos enriquecidos`);
-    } else {
-      console.log(`[Sync ${module}] ⚡ ${produtoIds.size} produtos únicos detectados (sem enrichment)`);
+    // FASE 2: Enrichment de produtos com cache inteligente
+    const produtosInfo = new Map<number, any>();
+    
+    if (!isPeriodSync && produtoIds.size > 0) {
+      try {
+        // Usar sistema de cache inteligente
+        const produtosMap = await getProdutosInfo(
+          companyId,
+          connection, // Passar conexão completa
+          Array.from(produtoIds),
+          {
+            maxEnrich: 50, // Limite de 50 produtos novos por sync incremental
+          }
+        );
+
+        // Converter para formato esperado pelo transformer
+        for (const [id, info] of produtosMap.entries()) {
+          produtosInfo.set(Number(id), {
+            id: Number(id),
+            codigo: info.sku,
+            nome: info.descricao,
+            categoria: {
+              descricao: info.categoriaNome || "N/D",
+              caminho_completo: info.categoriaCaminhoCompleto || "N/D",
+            },
+          });
+        }
+
+        const fromCache = Array.from(produtosMap.values()).filter(p => p.fromCache).length;
+        const enriched = produtosMap.size - fromCache;
+        
+        console.log(
+          `[Sync ${module}] ✓ ${fromCache} produtos do cache, ${enriched} enriquecidos, ${produtoIds.size - produtosMap.size} pendentes`
+        );
+      } catch (err) {
+        console.error(`[Sync ${module}] Erro no enrichment com cache:`, err);
+        // Continuar sem enrichment em caso de erro
+      }
+    } else if (isPeriodSync) {
+      console.log(`[Sync ${module}] ⚡ Enrichment pulado (modo período)`);
     }
 
-    // FASE 3: Processar cada pedido (com ou sem enrichment)
+    // FASE 3: Processar cada pedido
     for (let i = 0; i < pedidosDetalhados.length; i++) {
       const detalhe = pedidosDetalhados[i];
       const pedido = pedidos[i];
       
       try {
-        // Para cada pedido, transformar com enrichment
+        // Para cada pedido, transformar com ou sem enrichment
         let vendas;
         try {
           if (detalhe) {
-            // Usar o pedido DETALHE completo (com cliente, pagamento, itens) + enrichment
+            // Usar o pedido DETALHE completo (com cliente, pagamento, itens) + enrichment (se disponível)
             vendas = transformPedidoDetalheToVendas(companyId, detalhe, {
-              produtos: produtosEnriquecidos,
+              produtos: produtosInfo,
             });
           } else {
             // Fallback para pedido resumo
@@ -1084,7 +1098,7 @@ const syncByModule = async (
   companyId: string,
   connection: TinyConnection,
   modules: SyncModule[] = ALL_MODULES,
-  options?: { startDate?: Date; endDate?: Date; isCron?: boolean; skipEnrichment?: boolean }
+  options?: { startDate?: Date; endDate?: Date; isCron?: boolean; mode?: "incremental" | "period" }
 ): Promise<ModuleResult[]> => {
   const results: ModuleResult[] = [];
   
@@ -1249,7 +1263,7 @@ export async function runSync(options: SyncOptions) {
           startDate: options.startDate,
           endDate: options.endDate,
           isCron: options.isCron,
-          skipEnrichment: options.skipEnrichment,
+          mode: options.mode,
         }
       );
       const hasErrors = stats.some((s) => s.errors && s.errors.length > 0);

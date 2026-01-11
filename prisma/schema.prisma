@@ -65,6 +65,7 @@ model Company {
   vwCPagas     VwContasPagas[]
   vwEstoque    VwEstoque[]
   vwCRecebidas VwContasRecebidas[]
+  produtoCache TinyProdutoCache[]
 }
 
 model UserCompanyRole {
@@ -151,6 +152,26 @@ model RawPayload {
 
   @@index([companyId, module])
   @@index([companyId, receivedAt])
+}
+
+/// Cache persistente de produtos do Tiny ERP.
+/// Reduz chamadas repetidas a /produtos/{id} entre sincronizações.
+model TinyProdutoCache {
+  id                       String   @id @default(uuid())
+  companyId                String
+  produtoId                BigInt   @db.BigInt
+  sku                      String?
+  descricao                String
+  categoriaNome            String?
+  categoriaCaminhoCompleto String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  company                  Company  @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, produtoId])
+  @@index([companyId])
+  @@index([updatedAt])
+  @@map("tiny_produto_cache")
 }
 
 /// View: vw_vendas (persistida como tabela).
