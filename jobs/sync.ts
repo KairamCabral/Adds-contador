@@ -253,44 +253,62 @@ const syncVendas = async (
       console.log(`[Sync ${module}] 🔒 Modo PERÍODO: usando APENAS cache (zero chamadas /produtos/{id})`);
       
       try {
-        const { cached, missing } = await getCachedProdutosOnly(
-          companyId,
-          Array.from(produtoIds)
-        );
+        // Importar helpers de cache
+        const { loadProdutoCacheMap, pickCategoriaFromCache } = await import("@/lib/tiny/produto-cache");
+        
+        // Carregar cache em lote
+        const produtoIdsArray = Array.from(produtoIds).map(id => Number(id));
+        const cacheMap = await loadProdutoCacheMap(companyId, produtoIdsArray);
 
-        // Converter produtos cacheados para formato esperado
-        for (const [id, info] of cached.entries()) {
-          produtosInfo.set(Number(id), {
-            id: Number(id),
-            codigo: info.sku,
-            nome: info.descricao,
+        // Processar cada produto
+        let countFromCache = 0;
+        let countPendente = 0;
+
+        for (const id of produtoIds) {
+          const produtoIdNumber = Number(id);
+          const cacheRow = cacheMap.get(produtoIdNumber);
+          const categoria = pickCategoriaFromCache(cacheRow);
+
+          produtosInfo.set(produtoIdNumber, {
+            id: produtoIdNumber,
+            codigo: undefined, // Não disponível na lista
+            nome: `Produto ${produtoIdNumber}`,
             categoria: {
-              descricao: info.categoriaNome || "N/D",
-              caminho_completo: info.categoriaCaminhoCompleto || "N/D",
+              descricao: categoria,
+              caminho_completo: categoria,
             },
           });
+
+          if (categoria === "Pendente") {
+            countPendente++;
+          } else {
+            countFromCache++;
+          }
         }
 
-        // Produtos faltando: marcar como "Pendente"
-        for (const id of missing) {
-          produtosInfo.set(Number(id), {
-            id: Number(id),
-            codigo: undefined,
-            nome: `Produto ${id}`,
-            categoria: {
-              descricao: "Pendente",
-              caminho_completo: "Pendente",
-            },
-          });
+        // Registrar produtos pendentes para enriquecimento futuro (se houver)
+        if (countPendente > 0) {
+          const { registerPendingProducts } = await import("@/lib/tiny/produto-cache-readonly");
+          const pendingIds = Array.from(produtoIds)
+            .map(id => Number(id))
+            .filter(id => pickCategoriaFromCache(cacheMap.get(id)) === "Pendente")
+            .map(id => BigInt(id));
+          
+          if (pendingIds.length > 0) {
+            await registerPendingProducts(companyId, pendingIds);
+          }
         }
 
-        // Registrar produtos pendentes para enriquecimento futuro
-        if (missing.length > 0) {
-          await registerPendingProducts(companyId, missing);
-        }
+        const totalProdutos = produtoIds.size;
+        const percentPendente = totalProdutos > 0 
+          ? ((countPendente / totalProdutos) * 100).toFixed(1) 
+          : '0.0';
 
         console.log(
-          `[Sync ${module}] ✓ ${cached.size} produtos do cache, ${missing.length} marcados como "Pendente"`
+          `[Sync ${module}] ✓ ${countFromCache} produtos do cache, ${countPendente} marcados como "Pendente" (${percentPendente}%)`
+        );
+        console.log(
+          `[Sync ${module}] 📊 Categorias pendentes: ${countPendente} de ${totalProdutos} produtos únicos (${percentPendente}%)`
         );
       } catch (err) {
         console.error(`[Sync ${module}] Erro ao consultar cache:`, err);

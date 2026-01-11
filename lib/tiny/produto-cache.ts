@@ -238,3 +238,85 @@ export async function getCacheStats(companyId: string) {
     last30Days,
   };
 }
+
+/**
+ * Helper simplificado: carrega cache de produtos em lote para sync por período
+ * Retorna Map com informações básicas de categoria
+ */
+export async function loadProdutoCacheMap(
+  companyId: string,
+  produtoIds: number[]
+): Promise<Map<number, { categoriaNome?: string; categoriaCaminhoCompleto?: string }>> {
+  const result = new Map<number, { categoriaNome?: string; categoriaCaminhoCompleto?: string }>();
+
+  if (produtoIds.length === 0) {
+    return result;
+  }
+
+  // Converter number[] para BigInt[] para consulta no Prisma
+  const uniqueIds = Array.from(new Set(produtoIds));
+  const bigIntIds = uniqueIds.map(id => BigInt(id));
+
+  console.log(`[ProdutoCache] Carregando cache para ${uniqueIds.length} produtos`);
+
+  try {
+    // Buscar em lote no cache
+    const cached = await prisma.tinyProdutoCache.findMany({
+      where: {
+        companyId,
+        produtoId: { in: bigIntIds },
+      },
+      select: {
+        produtoId: true,
+        categoriaNome: true,
+        categoriaCaminhoCompleto: true,
+      },
+    });
+
+    // Converter BigInt -> number e montar Map
+    for (const item of cached) {
+      const produtoIdNumber = Number(item.produtoId);
+      result.set(produtoIdNumber, {
+        categoriaNome: item.categoriaNome || undefined,
+        categoriaCaminhoCompleto: item.categoriaCaminhoCompleto || undefined,
+      });
+    }
+
+    const foundCount = result.size;
+    const missingCount = uniqueIds.length - foundCount;
+    const hitRate = uniqueIds.length > 0 ? ((foundCount / uniqueIds.length) * 100).toFixed(1) : '0.0';
+
+    console.log(
+      `[ProdutoCache] ✓ ${foundCount} encontrados, ${missingCount} faltando (${hitRate}% hit rate)`
+    );
+  } catch (error) {
+    console.error('[ProdutoCache] Erro ao carregar cache:', error);
+  }
+
+  return result;
+}
+
+/**
+ * Helper: extrai categoria de uma row do cache
+ * Preferência: categoriaCaminhoCompleto > categoriaNome > "Pendente"
+ */
+export function pickCategoriaFromCache(
+  row?: { categoriaNome?: string; categoriaCaminhoCompleto?: string }
+): string {
+  if (!row) {
+    return "Pendente";
+  }
+
+  // Preferir caminho completo (mais detalhado)
+  if (row.categoriaCaminhoCompleto && row.categoriaCaminhoCompleto.trim()) {
+    return row.categoriaCaminhoCompleto.trim();
+  }
+
+  // Fallback para nome da categoria
+  if (row.categoriaNome && row.categoriaNome.trim()) {
+    return row.categoriaNome.trim();
+  }
+
+  // Se não tem nada, marcar como pendente
+  return "Pendente";
+}
