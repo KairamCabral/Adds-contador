@@ -151,10 +151,11 @@ export async function startSyncRun(runId: string) {
         }
       } catch (err: unknown) {
         // Não bloquear sync se pre-enrichment falhar
+        const errorMessage = err instanceof Error ? err.message : String(err);
         await addLog(
           runId,
           "warn",
-          `Erro no pre-enrichment: ${err.message}`,
+          `Erro no pre-enrichment: ${errorMessage}`,
           null
         );
       }
