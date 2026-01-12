@@ -22,15 +22,15 @@ interface RateLimiterConfig {
   maxBackoff: number;
 }
 
-interface QueuedRequest<T> {
-  fn: () => Promise<T>;
-  resolve: (value: T) => void;
-  reject: (error: Error) => void;
-}
+type QueueItem = {
+  fn: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+};
 
 export class TinyRateLimiter {
   private config: RateLimiterConfig;
-  private queue: QueuedRequest<unknown>[] = [];
+  private queue: QueueItem[] = [];
   private activeRequests = 0;
   private lastRequestTime = 0;
 
@@ -50,7 +50,11 @@ export class TinyRateLimiter {
    */
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
+      this.queue.push({
+        fn: () => fn() as Promise<unknown>,
+        resolve: (value: unknown) => resolve(value as T),
+        reject: (reason: unknown) => reject(reason),
+      });
       this.processQueue();
     });
   }
@@ -79,8 +83,8 @@ export class TinyRateLimiter {
     try {
       const result = await this.executeWithRetry(item.fn);
       item.resolve(result);
-    } catch (error) {
-      item.reject(error as Error);
+    } catch (error: unknown) {
+      item.reject(error);
     } finally {
       this.activeRequests--;
       // Processar próximo item da fila
@@ -90,8 +94,8 @@ export class TinyRateLimiter {
     }
   }
 
-  private async executeWithRetry<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: Error | null = null;
+  private async executeWithRetry(fn: () => Promise<unknown>): Promise<unknown> {
+    let lastError: unknown = null;
     let backoff = this.config.initialBackoff;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
@@ -101,7 +105,8 @@ export class TinyRateLimiter {
         lastError = error;
 
         // Se não for 429, não tentar novamente
-        if (error.status !== 429 && error.statusCode !== 429) {
+        const errorObj = error as { status?: number; statusCode?: number; retryAfter?: number | string };
+        if (errorObj.status !== 429 && errorObj.statusCode !== 429) {
           throw error;
         }
 
@@ -116,12 +121,12 @@ export class TinyRateLimiter {
         // Calcular delay: usar Retry-After se disponível, senão backoff exponencial
         let delay = backoff;
         
-        if (error.retryAfter) {
+        if (errorObj.retryAfter) {
           // Retry-After pode ser em segundos ou uma data
-          if (typeof error.retryAfter === "number") {
-            delay = error.retryAfter * 1000;
+          if (typeof errorObj.retryAfter === "number") {
+            delay = errorObj.retryAfter * 1000;
           } else {
-            const retryDate = new Date(error.retryAfter);
+            const retryDate = new Date(errorObj.retryAfter);
             delay = Math.max(0, retryDate.getTime() - Date.now());
           }
         }
