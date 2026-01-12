@@ -174,9 +174,10 @@ export async function getProdutosInfo(
         `[ProdutoCache] ✓ Produto ${produtoId} enriquecido e cacheado (${enriched.length}/${toEnrich.length})`
       );
     } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error(
         `[ProdutoCache] ✗ Erro ao enriquecer produto ${produtoId}:`,
-        error.message
+        msg
       );
       
       // Adicionar produto com informação mínima (não bloquear o sync)
@@ -311,8 +312,9 @@ export async function loadProdutoCacheMap(
     console.log(
       `[ProdutoCache] ✓ ${foundCount} encontrados, ${missingCount} faltando (${hitRate}% hit rate)`
     );
-  } catch (error) {
-    console.error('[ProdutoCache] Erro ao carregar cache:', error);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('[ProdutoCache] Erro ao carregar cache:', msg);
   }
 
   return result;
