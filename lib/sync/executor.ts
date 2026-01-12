@@ -219,7 +219,7 @@ export async function runSyncStep(runId: string): Promise<boolean> {
     where: { id: runId },
     data: {
       currentModule: nextModule,
-      progressJson: progress,
+      progressJson: progress as unknown as Prisma.InputJsonValue,
     },
   });
 
@@ -272,9 +272,9 @@ export async function runSyncStep(runId: string): Promise<boolean> {
     };
 
     await prisma.syncRun.update({
-      where: { id: runId },
-      data: { progressJson: progress },
-    });
+    where: { id: runId },
+    data: { progressJson: progress as unknown as Prisma.InputJsonValue },
+  });
 
     await addLog(
       runId,
@@ -296,9 +296,9 @@ export async function runSyncStep(runId: string): Promise<boolean> {
     };
 
     await prisma.syncRun.update({
-      where: { id: runId },
-      data: { progressJson: progress },
-    });
+    where: { id: runId },
+    data: { progressJson: progress as unknown as Prisma.InputJsonValue },
+  });
 
     await addLog(runId, "error", `Erro no módulo ${nextModule}: ${errorMessage}`, nextModule);
 
