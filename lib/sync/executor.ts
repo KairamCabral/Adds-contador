@@ -287,11 +287,12 @@ export async function runSyncStep(runId: string): Promise<boolean> {
     // Ainda há módulos pendentes
     return SYNC_MODULES.some((mod) => progress.modules[mod]?.status === "pending");
   } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     // Marcar módulo como falho mas continuar
     progress.modules[nextModule] = {
       status: "failed",
       processed: 0,
-      errors: [error.message],
+      errors: [errorMessage],
     };
 
     await prisma.syncRun.update({
@@ -299,7 +300,7 @@ export async function runSyncStep(runId: string): Promise<boolean> {
       data: { progressJson: progress },
     });
 
-    await addLog(runId, "error", `Erro no módulo ${nextModule}: ${error.message}`, nextModule);
+    await addLog(runId, "error", `Erro no módulo ${nextModule}: ${errorMessage}`, nextModule);
 
     // Continuar com próximos módulos
     return SYNC_MODULES.some((mod) => progress.modules[mod]?.status === "pending");

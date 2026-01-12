@@ -141,7 +141,8 @@ export async function preEnrichPeriodProducts(
           : `Cache suficiente (${cacheHitRate}% hit rate)`,
     };
   } catch (error: unknown) {
-    console.error(`[PreEnrich] Erro:`, error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[PreEnrich] Erro:`, errorMessage);
     // Continuar mesmo com erro
     return {
       shouldProceed: true,
@@ -150,7 +151,7 @@ export async function preEnrichPeriodProducts(
       missing: 0,
       enriched: 0,
       timeMs: Date.now() - startTime,
-      message: `Erro no pre-enrichment: ${error.message}`,
+      message: `Erro no pre-enrichment: ${errorMessage}`,
     };
   }
 }
