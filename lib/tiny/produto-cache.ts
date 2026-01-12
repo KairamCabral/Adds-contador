@@ -13,6 +13,18 @@ import { getProdutoDetalhe } from "./api";
 import { getTinyRateLimiter } from "./rate-limiter";
 import { TinyConnection } from "@prisma/client";
 
+/**
+ * Helper para converter valores unknown em string opcional de forma type-safe
+ */
+const asOptionalString = (v: unknown): string | undefined => {
+  if (typeof v === "string") {
+    const s = v.trim();
+    return s ? s : undefined;
+  }
+  if (typeof v === "number" || typeof v === "bigint") return String(v);
+  return undefined;
+};
+
 export interface ProdutoInfo {
   produtoId: bigint;
   sku?: string;
@@ -111,12 +123,22 @@ export async function getProdutosInfo(
       // Extrair informações do produto (estrutura pode variar)
       const produtoData = produto as Record<string, unknown>;
       
+      // Extrair categoria com type guard
+      const categoriaObj =
+        produtoData.categoria && typeof produtoData.categoria === "object" && produtoData.categoria !== null
+          ? (produtoData.categoria as Record<string, unknown>)
+          : undefined;
+      
       const info: ProdutoInfo = {
         produtoId,
-        sku: produtoData.codigo || produtoData.sku || undefined,
-        descricao: produtoData.nome || produtoData.descricao || `Produto ${produtoId}`,
-        categoriaNome: produtoData.categoria?.descricao || produtoData.categoria?.nome || undefined,
-        categoriaCaminhoCompleto: produtoData.categoria?.caminho_completo || produtoData.categoria?.caminho || undefined,
+        sku: asOptionalString(produtoData.codigo) ?? asOptionalString(produtoData.sku),
+        descricao:
+          asOptionalString(produtoData.nome) ??
+          asOptionalString(produtoData.descricao) ??
+          `Produto ${produtoId}`,
+        categoriaNome: asOptionalString(categoriaObj?.descricao) ?? asOptionalString(categoriaObj?.nome),
+        categoriaCaminhoCompleto:
+          asOptionalString(categoriaObj?.caminho_completo) ?? asOptionalString(categoriaObj?.caminho),
         fromCache: false,
       };
 
