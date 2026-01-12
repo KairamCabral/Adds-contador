@@ -200,7 +200,7 @@ export async function runSyncStep(runId: string): Promise<boolean> {
     return false;
   }
 
-  const progress = (run.progressJson as SyncProgress) || { modules: {} };
+  const progress = (run.progressJson as unknown as SyncProgress) || { modules: {} };
 
   // Encontrar próximo módulo pendente
   const nextModule = SYNC_MODULES.find(
@@ -342,7 +342,7 @@ async function finalizeSyncRun(runId: string, status: "DONE" | "FAILED") {
     throw new Error(`SyncRun ${runId} não encontrado`);
   }
 
-  const progress = (run.progressJson as SyncProgress) || { modules: {} };
+  const progress = (run.progressJson as unknown as SyncProgress) || { modules: {} };
 
   // Contar módulos com erro
   const failedModules = Object.entries(progress.modules).filter(
