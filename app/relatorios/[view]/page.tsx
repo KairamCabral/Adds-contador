@@ -167,52 +167,82 @@ export default async function ReportPage({
   return (
     <div className="relative min-h-screen bg-slate-950 text-slate-50">
       {/* Header Fixo com Controles */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur-sm">
-        {/* Barra de Controles - Logo e Sync */}
-        <div className="border-b border-slate-800/50">
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur-lg shadow-lg">
+        {/* Barra Superior - Logo, Título e Ações */}
+        <div className="border-b border-slate-800/50 bg-gradient-to-r from-slate-900/50 to-slate-950/50">
           <div className="mx-auto max-w-[1920px] px-6">
-            <div className="flex items-center justify-between gap-6 py-3">
-              {/* Info do Relatório */}
+            <div className="flex items-center justify-between py-4">
+              
+              {/* Lado Esquerdo: Logo + Info do Relatório */}
               <div className="flex items-center gap-6">
                 {/* Logo */}
-                <Image 
-                  src="/Logo-cor-adds.webp" 
-                  alt="ADDS"
-                  width={120}
-                  height={32}
-                  priority
-                  className="h-8 w-auto"
-                />
+                <div className="flex-shrink-0">
+                  <Image 
+                    src="/Logo-cor-adds.webp" 
+                    alt="ADDS"
+                    width={140}
+                    height={36}
+                    priority
+                    className="h-9 w-auto"
+                  />
+                </div>
                 
-                <div>
-                  <h1 className="text-lg font-bold text-white">{config.title}</h1>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
+                {/* Divider */}
+                <div className="h-10 w-px bg-slate-700/50" />
+                
+                {/* Info do Relatório */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <h1 className="text-xl font-bold text-white tracking-tight">{config.title}</h1>
+                  </div>
+                  
+                  {/* Status e Última Sync */}
+                  <div className="flex items-center gap-3 text-xs">
+                    {/* Status Conexão */}
                     {!tinyConnection ? (
-                      <span className="text-amber-400">
-                        ⚠️ <a href="/admin/conexoes-tiny" className="underline hover:text-amber-300">Conectar Tiny</a>
-                      </span>
+                      <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 border border-amber-500/20">
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        <span className="font-medium text-amber-400">
+                          <a href="/admin/conexoes-tiny" className="hover:text-amber-300 transition-colors">
+                            Conectar Tiny
+                          </a>
+                        </span>
+                      </div>
                     ) : (
-                      <span className="text-emerald-400">✓ Conectado</span>
+                      <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 border border-emerald-500/20">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        <span className="font-medium text-emerald-400">Conectado</span>
+                      </div>
                     )}
-                    {lastSync && (
-                      <>
-                        <span className="text-slate-700">•</span>
-                        <span>
-                          Sync: {lastSync.startedAt && new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
+                    
+                    {/* Última Sincronização */}
+                    {lastSync && lastSync.startedAt && (
+                      <div className="flex items-center gap-1.5 text-slate-400">
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="font-medium">
+                          Última sync: {new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
                             day: "2-digit", 
-                            month: "2-digit", 
+                            month: "2-digit",
+                            year: "2-digit",
                             hour: "2-digit", 
                             minute: "2-digit" 
                           })}
                         </span>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Controles de Ação */}
-              <div className="flex items-center gap-2">
+              {/* Lado Direito: Ações */}
+              <div className="flex items-center gap-3">
                 {/* Sincronização V2 (Resumable) */}
                 <SyncControlsV2
                   companyId={selectedCompanyId}
@@ -226,10 +256,11 @@ export default async function ReportPage({
                   }
                 />
 
+                {/* Divider */}
+                <div className="h-8 w-px bg-slate-700/50" />
+
                 {/* Logout */}
-                <div className="border-l border-slate-800 pl-2">
-                  <LogoutButton />
-                </div>
+                <LogoutButton />
               </div>
             </div>
           </div>
