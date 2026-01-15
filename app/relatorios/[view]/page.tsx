@@ -1,6 +1,7 @@
 import React from "react";
 import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 
 import { auth } from "@/auth";
 import SyncControlsV2 from "@/components/sync-controls-v2-lazy";
@@ -176,7 +177,7 @@ export default async function ReportPage({
               {/* Lado Esquerdo: Logo + Título + Status Compacto */}
               <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                 {/* Logo (clicável para home) */}
-                <a href="/" className="flex-shrink-0 transition-opacity hover:opacity-80" title="Voltar para a página inicial">
+                <Link href="/" className="flex-shrink-0 transition-opacity hover:opacity-80" title="Voltar para a página inicial">
                   <Image 
                     src="/Logo-cor-adds.webp" 
                     alt="ADDS"
@@ -185,7 +186,7 @@ export default async function ReportPage({
                     priority
                     className="h-6 sm:h-7 w-auto"
                   />
-                </a>
+                </Link>
                 
                 {/* Divider */}
                 <div className="hidden sm:block h-8 w-px bg-slate-700/50" />
@@ -241,7 +242,7 @@ export default async function ReportPage({
               {/* Lado Direito: Home + Sync + Logout - Horizontal compacto */}
               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                 {/* Botão Home */}
-                <a
+                <Link
                   href="/"
                   className="flex items-center gap-1.5 rounded-md border border-slate-600/50 bg-slate-800/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-all hover:bg-slate-700/60 hover:text-white hover:border-slate-500"
                   title="Voltar para home"
@@ -250,7 +251,7 @@ export default async function ReportPage({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
                   <span className="hidden sm:inline">Home</span>
-                </a>
+                </Link>
 
                 {/* Botão Conexão Tiny (se não conectado) */}
                 {!tinyConnection && (

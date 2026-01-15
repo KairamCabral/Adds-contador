@@ -12,7 +12,7 @@ type Props = {
   };
 };
 
-export function SyncControlsV2({ companyId, lastSync }: Props) {
+export function SyncControlsV2({ companyId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
