@@ -237,7 +237,7 @@ export async function processContasReceberChunk(
     for (const item of result.itens) {
       try {
         // 🔥 ENRICHMENT: Buscar detalhe da conta (que inclui categoria!)
-        let contaComDetalhe = item;
+        let contaComDetalhe: unknown = item;
         try {
           console.log(`[ChunkContasReceber] 🔍 Buscando detalhe da conta ${item.id}...`);
           const detalhe = await getContaReceberDetalhe(connection, Number(item.id));
@@ -346,7 +346,7 @@ export async function processContasPagarChunk(
     for (const item of result.itens) {
       try {
         // 🔥 ENRICHMENT: Buscar detalhe da conta (que inclui categoria!)
-        let contaComDetalhe = item;
+        let contaComDetalhe: unknown = item;
         try {
           console.log(`[ChunkContasPagar] 🔍 Buscando detalhe da conta ${item.id}...`);
           const detalhe = await getContaPagarDetalhe(connection, Number(item.id));
