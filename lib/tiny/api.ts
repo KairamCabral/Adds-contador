@@ -41,8 +41,8 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withRetry = async <T>(
   fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelay = 1000
+  maxRetries = 5, // Aumentado de 3 para 5 para lidar melhor com rate limits
+  baseDelay = 2000 // Aumentado de 1000ms para 2000ms
 ): Promise<T> => {
   let lastError: Error | null = null;
 

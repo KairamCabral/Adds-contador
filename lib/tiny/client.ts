@@ -149,33 +149,46 @@ export async function tinyRequest<T = unknown>({
 
   if (response.status === 401) {
     console.log("[Tiny API] Token inválido, tentando refresh...");
-    // Tentar uma vez renovar e refazer a chamada
-    const refreshed = await refreshAccessToken(
-      decryptSecret(connection.refreshTokenEnc)
-    );
-    await persistTokenUpdate(connection.id, refreshed);
+    try {
+      // Tentar uma vez renovar e refazer a chamada
+      const refreshed = await refreshAccessToken(
+        decryptSecret(connection.refreshTokenEnc)
+      );
+      await persistTokenUpdate(connection.id, refreshed);
 
-    const retryStart = Date.now();
-    const retry = await fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${refreshed.access_token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+      const retryStart = Date.now();
+      const retry = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${refreshed.access_token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
 
-    const retryTime = Date.now() - retryStart;
-    console.log(
-      `[Tiny API] Retry ${method} ${path} → ${retry.status} (${retryTime}ms)`
-    );
+      const retryTime = Date.now() - retryStart;
+      console.log(
+        `[Tiny API] Retry ${method} ${path} → ${retry.status} (${retryTime}ms)`
+      );
 
-    if (!retry.ok) {
-      const text = await retry.text();
-      throw new Error(`Tiny API erro após refresh: ${retry.status} ${text}`);
+      if (!retry.ok) {
+        const text = await retry.text();
+        throw new Error(`Tiny API erro após refresh: ${retry.status} ${text}`);
+      }
+      return (await retry.json()) as T;
+    } catch (refreshError) {
+      const errorMsg = refreshError instanceof Error ? refreshError.message : String(refreshError);
+      console.error("[Tiny API] Erro ao renovar token:", errorMsg);
+      
+      // Mensagem amigável para usuário
+      if (errorMsg.includes("invalid_grant") || errorMsg.includes("Token is not active")) {
+        throw new Error(
+          "Sessão Tiny expirada. Por favor, reconecte sua conta em Admin > Conexões Tiny."
+        );
+      }
+      throw new Error(`Falha ao renovar token: ${errorMsg}`);
     }
-    return (await retry.json()) as T;
   }
 
   if (!response.ok) {

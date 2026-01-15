@@ -83,129 +83,101 @@ export function SyncControlsV2({ companyId, lastSync }: Props) {
 
   return (
     <>
-      <div className="space-y-3">
-        {/* Título Compacto */}
-        <div className="flex items-center gap-2">
-          <svg
-            className="h-4 w-4 text-slate-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          <h3 className="text-sm font-semibold text-slate-200">Sincronização</h3>
-        </div>
-
-        <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-3 backdrop-blur-sm">
-          {/* Status Compacto */}
-          {lastSync && (
-            <div className="mb-3 flex items-center gap-2 text-xs text-slate-400">
-              <div className="flex items-center gap-1.5">
-                <div
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    lastSync.status === "DONE"
-                      ? "bg-emerald-500"
-                      : lastSync.status === "FAILED"
-                      ? "bg-red-500"
-                      : "bg-yellow-500"
-                  }`}
-                />
-                <span>
-                  Última:{" "}
-                  {new Date(lastSync.date).toLocaleDateString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Seletor de Modo */}
-          <div className="mb-3 flex gap-2">
-            <button
-              onClick={() => setSyncMode("quick")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                syncMode === "quick"
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              Rápido (30d)
-            </button>
-            <button
-              onClick={() => setSyncMode("month")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                syncMode === "month"
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              Por Mês
-            </button>
-          </div>
-
-          {/* Seletor de Mês */}
-          {syncMode === "month" && (
-            <div className="mb-3">
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full rounded-md border border-slate-600 bg-slate-700/50 px-3 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          )}
-
-          {/* Botão de Sincronizar */}
+      {/* Layout Horizontal Compacto */}
+      <div className="flex items-center gap-2">
+        {/* Seletor de Modo - Pills Horizontais */}
+        <div className="flex items-center gap-1 rounded-lg bg-slate-800/60 p-1">
           <button
-            onClick={() => handleSync(syncMode)}
-            disabled={loading}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => setSyncMode("quick")}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              syncMode === "quick"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+            }`}
+            title="Sincronização rápida dos últimos 30 dias"
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="h-4 w-4 animate-spin"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Criando...
-              </span>
-            ) : (
-              "Sincronizar"
-            )}
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span className="hidden sm:inline">Rápido</span>
+            <span className="text-[10px] opacity-70">(30d)</span>
           </button>
-
-          {/* Mensagens */}
-          {error && (
-            <div className="mt-3 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
-              {error}
-            </div>
-          )}
+          <button
+            onClick={() => setSyncMode("month")}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+              syncMode === "month"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+            }`}
+            title="Sincronização por mês específico"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="hidden sm:inline">Por Mês</span>
+          </button>
         </div>
+
+        {/* Seletor de Mês - Aparece inline quando modo "month" */}
+        {syncMode === "month" && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="h-8 rounded-md border border-slate-600/50 bg-slate-800/60 px-2.5 text-xs text-slate-200 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+              title="Selecione o mês para sincronizar"
+            />
+          </div>
+        )}
+
+        {/* Botão de Sincronizar - Compacto */}
+        <button
+          onClick={() => handleSync(syncMode)}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-blue-600 to-blue-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:from-blue-500 hover:to-blue-600 hover:shadow disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-sm"
+          title={syncMode === "quick" ? "Sincronizar últimos 30 dias" : `Sincronizar ${selectedMonth}`}
+        >
+          {loading ? (
+            <>
+              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span className="hidden sm:inline">Processando...</span>
+            </>
+          ) : (
+            <>
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>Sincronizar</span>
+            </>
+          )}
+        </button>
+
+        {/* Mensagem de Erro - Toast Compacto */}
+        {error && (
+          <div className="absolute right-6 top-16 z-30 max-w-sm animate-in slide-in-from-top-2 fade-in duration-300">
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/90 px-3 py-2 shadow-lg backdrop-blur-sm">
+              <svg className="h-4 w-4 flex-shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-xs font-medium text-red-200">Erro ao sincronizar</p>
+                <p className="mt-0.5 text-xs text-red-300/80">{error}</p>
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="flex-shrink-0 text-red-400 hover:text-red-200 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Progresso */}

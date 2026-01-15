@@ -60,6 +60,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 🔒 LOCK: Tentar adquirir lock atômico (previne processamento concorrente)
+    const lockResult = await prisma.syncRun.updateMany({
+      where: {
+        id: runId,
+        status: "RUNNING",
+        isProcessing: false, // ✅ Só processa se não estiver processando
+      },
+      data: {
+        isProcessing: true,
+      },
+    });
+
+    if (lockResult.count === 0) {
+      // Já está processando ou status mudou
+      console.log(`[SyncV2 Step] ⚠️ Lock não adquirido (já está processando) runId=${runId}`);
+      return NextResponse.json({
+        success: true,
+        status: syncRun.status,
+        message: "Step já está sendo processado",
+      });
+    }
+
+    console.log(`[SyncV2 Step] 🔒 Lock adquirido runId=${runId}`);
+
     // Verificar conexão Tiny
     const connection = syncRun.company.connections[0];
     if (!connection) {
@@ -69,6 +93,7 @@ export async function POST(request: NextRequest) {
           status: "FAILED",
           errorMessage: "Sem conexão Tiny",
           finishedAt: new Date(),
+          isProcessing: false, // 🔓 Liberar lock
         },
       });
 
@@ -86,6 +111,7 @@ export async function POST(request: NextRequest) {
         data: {
           status: "DONE",
           finishedAt: new Date(),
+          isProcessing: false, // 🔓 Liberar lock
         },
       });
 
@@ -148,11 +174,23 @@ export async function POST(request: NextRequest) {
         break;
 
       case "vw_contas_pagas":
-        result = await processContasPagasChunk();
+        result = await processContasPagasChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
         break;
 
       case "vw_contas_recebidas":
-        result = await processContasRecebidasChunk();
+        result = await processContasRecebidasChunk(
+          syncRun.companyId,
+          connection,
+          startDate,
+          endDate,
+          cursor
+        );
         break;
 
       default:
@@ -181,6 +219,13 @@ export async function POST(request: NextRequest) {
       processed: currentProcessed + result.processed 
     };
 
+    // DEBUG: Log do progresso
+    console.log(`[SyncV2 Step] Progresso atualizado:`, {
+      module: currentModule,
+      processed: currentProcessed + result.processed,
+      progressJson,
+    });
+
     // Se o módulo terminou, avançar para o próximo
     const newModuleIndex = result.done ? syncRun.moduleIndex + 1 : syncRun.moduleIndex;
     const newCursor = result.done ? {} : result.cursor;
@@ -194,6 +239,7 @@ export async function POST(request: NextRequest) {
           errorMessage: result.error,
           progressJson: progressJson as unknown as Prisma.InputJsonValue,
           finishedAt: new Date(),
+          isProcessing: false, // 🔓 Liberar lock
         },
       });
 
@@ -222,6 +268,7 @@ export async function POST(request: NextRequest) {
         currentModule: newModuleIndex < syncRun.modules.length 
           ? syncRun.modules[newModuleIndex] 
           : null,
+        isProcessing: false, // 🔓 Liberar lock
       },
     });
 

@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
         companyId: syncRun.companyId,
         mode: syncRun.syncMode,
         status: syncRun.status,
+        modules: syncRun.modules, // ✅ Adicionado: array de módulos
         currentModule,
         moduleIndex: syncRun.moduleIndex,
         totalModules,

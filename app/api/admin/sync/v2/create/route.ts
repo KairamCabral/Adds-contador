@@ -39,9 +39,10 @@ export async function POST(request: NextRequest) {
     // Determinar módulos baseado no modo
     let modules = ALL_MODULES;
     if (mode === "period") {
-      // Excluir estoque em sync de período (snapshot não histórico)
+      // Excluir apenas estoque (snapshot, não histórico)
+      // Contas Pagas/Recebidas: buscar por vencimento e filtrar por data de pagamento
       modules = ALL_MODULES.filter(m => m !== "vw_estoque");
-      console.log(`[SyncV2 Create] Modo período: excluindo vw_estoque. Módulos: ${modules.join(", ")}`);
+      console.log(`[SyncV2 Create] Modo período: ${modules.length} módulos. Lista: ${modules.join(", ")}`);
     }
 
     // Criar SyncRun

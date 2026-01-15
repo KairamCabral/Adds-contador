@@ -121,6 +121,7 @@ model SyncRun {
   modules           String[]     @default([]) // Lista de módulos a sincronizar
   moduleIndex       Int          @default(0)  // Índice do módulo atual
   cursor            Json?        @default("{}") // Cursor para paginação dentro do módulo
+  isProcessing      Boolean      @default(false) // Lock para evitar processamento concorrente
   
   company           Company      @relation(fields: [companyId], references: [id])
   triggeredByUser   User?        @relation("SyncTriggeredBy", fields: [triggeredByUserId], references: [id])

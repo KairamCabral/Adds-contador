@@ -14,12 +14,16 @@ import {
   getPedido,
   listContasReceber,
   listContasPagar,
+  getContaReceberDetalhe,
+  getContaPagarDetalhe,
 } from "@/lib/tiny/api";
 import { loadProdutoCacheMap, pickCategoriaFromCache } from "@/lib/tiny/produto-cache";
 import { 
   transformPedidoDetalheToVendas,
   transformContaReceberToPosicao,
   transformContaPagarToView,
+  transformContaPagaToView,
+  transformContaRecebidaToView,
 } from "@/lib/tiny/transformers";
 
 // Tipos auxiliares
@@ -56,7 +60,7 @@ export async function processVendasChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
-  const CHUNK_SIZE = 10;
+  const CHUNK_SIZE = 50; // ✅ Aumentado de 10 para 50 (sincronização mais rápida)
   
   try {
     // Cursor com tipos seguros
@@ -87,7 +91,8 @@ export async function processVendasChunk(
     const produtoIds = new Set<number>();
     const pedidosDetalhados: (TinyPedidoDetalhe | null)[] = [];
 
-    for (const pedido of chunkPedidos) {
+    for (let i = 0; i < chunkPedidos.length; i++) {
+      const pedido = chunkPedidos[i];
       try {
         const detalhe = await getPedido(connection, Number(pedido.id));
         const pedidoTipado = detalhe as TinyPedidoDetalhe;
@@ -101,6 +106,11 @@ export async function processVendasChunk(
               produtoIds.add(Number(produtoId));
             }
           }
+        }
+
+        // ✅ Delay entre pedidos para evitar rate limit (300ms)
+        if (i < chunkPedidos.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
       } catch (err) {
         console.warn(`[ChunkVendas] Falha ao buscar pedido ${pedido.id}:`, err);
@@ -199,15 +209,22 @@ export async function processContasReceberChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 5000; // 5 segundos entre tentativas
+  
   try {
     const currentPage = (cursor.page as number) || 1;
+    const retryCount = (cursor.retryCount as number) || 0;
 
-    console.log(`[ChunkContasReceber] Processando página ${currentPage}`);
+    const dataInicial = startDate.toISOString().split('T')[0];
+    const dataFinal = endDate.toISOString().split('T')[0];
+    
+    console.log(`[ChunkContasReceber] Processando página ${currentPage}, período: ${dataInicial} a ${dataFinal}${retryCount > 0 ? ` (tentativa ${retryCount + 1}/${MAX_RETRIES})` : ''}`);
 
     const result = await listContasReceber(connection, {
       pagina: currentPage,
-      dataInicial: startDate.toISOString().split('T')[0],
-      dataFinal: endDate.toISOString().split('T')[0],
+      dataInicial,
+      dataFinal,
     });
 
     if (!result.itens || result.itens.length === 0) {
@@ -215,11 +232,27 @@ export async function processContasReceberChunk(
       return { processed: 0, cursor: {}, done: true };
     }
 
-    // Processar e salvar
+    // Processar e salvar COM ENRICHMENT (buscar detalhe para obter categoria)
     let processed = 0;
     for (const item of result.itens) {
       try {
-        const contaData = transformContaReceberToPosicao(companyId, item);
+        // 🔥 ENRICHMENT: Buscar detalhe da conta (que inclui categoria!)
+        let contaComDetalhe = item;
+        try {
+          console.log(`[ChunkContasReceber] 🔍 Buscando detalhe da conta ${item.id}...`);
+          const detalhe = await getContaReceberDetalhe(connection, Number(item.id));
+          contaComDetalhe = detalhe;
+          console.log(`[ChunkContasReceber] ✓ Detalhe obtido para conta ${item.id}`);
+          
+          // Delay de 100ms para evitar rate limit (otimizado)
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (errDetalhe) {
+          const errMsg = errDetalhe instanceof Error ? errDetalhe.message : String(errDetalhe);
+          console.warn(`[ChunkContasReceber] ⚠ Erro ao buscar detalhe da conta ${item.id}, usando dados da lista:`, errMsg);
+          // Fallback: usa conta original sem categoria
+        }
+
+        const contaData = transformContaReceberToPosicao(companyId, contaComDetalhe);
         await prisma.vwContasReceberPosicao.upsert({
           where: { id: contaData.id as string },
           create: contaData,
@@ -227,7 +260,8 @@ export async function processContasReceberChunk(
         });
         processed++;
       } catch (err) {
-        console.warn(`[ChunkContasReceber] Erro ao processar conta ${item.id}:`, err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[ChunkContasReceber] Erro ao processar conta ${item.id}:`, errMsg);
       }
     }
 
@@ -237,11 +271,35 @@ export async function processContasReceberChunk(
 
     return {
       processed,
-      cursor: { page: currentPage + 1 },
+      cursor: { page: currentPage + 1, retryCount: 0 },
       done: !hasMore,
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+    const retryCount = (cursor.retryCount as number) || 0;
+    
+    // 🔄 Se for erro 400 (timeout) e ainda tem tentativas, retry
+    if (errorMsg.includes('400') && errorMsg.includes('muito tempo') && retryCount < MAX_RETRIES - 1) {
+      console.warn(`[ChunkContasReceber] ⚠ Timeout na página ${cursor.page || 1}. Aguardando ${RETRY_DELAY/1000}s para tentar novamente...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return {
+        processed: 0,
+        cursor: { ...cursor, retryCount: retryCount + 1 },
+        done: false,
+      };
+    }
+    
+    // ❌ Após 3 tentativas ou erro diferente, pular esta página
+    if (retryCount >= MAX_RETRIES - 1) {
+      console.error(`[ChunkContasReceber] ❌ Falha após ${MAX_RETRIES} tentativas. Pulando página ${cursor.page || 1}.`);
+      const currentPage = (cursor.page as number) || 1;
+      return {
+        processed: 0,
+        cursor: { page: currentPage + 1, retryCount: 0 },
+        done: false, // Continua para próxima página
+      };
+    }
+    
     console.error(`[ChunkContasReceber] Erro:`, errorMsg);
     return {
       processed: 0,
@@ -260,15 +318,22 @@ export async function processContasPagarChunk(
   endDate: Date,
   cursor: Record<string, unknown>
 ): Promise<ChunkResult> {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 5000; // 5 segundos entre tentativas
+  
   try {
     const currentPage = (cursor.page as number) || 1;
+    const retryCount = (cursor.retryCount as number) || 0;
 
-    console.log(`[ChunkContasPagar] Processando página ${currentPage}`);
+    const dataInicial = startDate.toISOString().split('T')[0];
+    const dataFinal = endDate.toISOString().split('T')[0];
+    
+    console.log(`[ChunkContasPagar] Processando página ${currentPage}, período: ${dataInicial} a ${dataFinal}${retryCount > 0 ? ` (tentativa ${retryCount + 1}/${MAX_RETRIES})` : ''}`);
 
     const result = await listContasPagar(connection, {
       pagina: currentPage,
-      dataInicial: startDate.toISOString().split('T')[0],
-      dataFinal: endDate.toISOString().split('T')[0],
+      dataInicial,
+      dataFinal,
     });
 
     if (!result.itens || result.itens.length === 0) {
@@ -276,11 +341,27 @@ export async function processContasPagarChunk(
       return { processed: 0, cursor: {}, done: true };
     }
 
-    // Processar e salvar
+    // Processar e salvar COM ENRICHMENT (buscar detalhe para obter categoria)
     let processed = 0;
     for (const item of result.itens) {
       try {
-        const contaData = transformContaPagarToView(companyId, item);
+        // 🔥 ENRICHMENT: Buscar detalhe da conta (que inclui categoria!)
+        let contaComDetalhe = item;
+        try {
+          console.log(`[ChunkContasPagar] 🔍 Buscando detalhe da conta ${item.id}...`);
+          const detalhe = await getContaPagarDetalhe(connection, Number(item.id));
+          contaComDetalhe = detalhe;
+          console.log(`[ChunkContasPagar] ✓ Detalhe obtido para conta ${item.id}`);
+          
+          // Delay de 100ms para evitar rate limit (otimizado)
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (errDetalhe) {
+          const errMsg = errDetalhe instanceof Error ? errDetalhe.message : String(errDetalhe);
+          console.warn(`[ChunkContasPagar] ⚠ Erro ao buscar detalhe da conta ${item.id}, usando dados da lista:`, errMsg);
+          // Fallback: usa conta original sem categoria
+        }
+
+        const contaData = transformContaPagarToView(companyId, contaComDetalhe);
         await prisma.vwContasPagar.upsert({
           where: { id: contaData.id as string },
           create: contaData,
@@ -288,7 +369,8 @@ export async function processContasPagarChunk(
         });
         processed++;
       } catch (err) {
-        console.warn(`[ChunkContasPagar] Erro ao processar conta ${item.id}:`, err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[ChunkContasPagar] Erro ao processar conta ${item.id}:`, errMsg);
       }
     }
 
@@ -298,11 +380,35 @@ export async function processContasPagarChunk(
 
     return {
       processed,
-      cursor: { page: currentPage + 1 },
+      cursor: { page: currentPage + 1, retryCount: 0 },
       done: !hasMore,
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+    const retryCount = (cursor.retryCount as number) || 0;
+    
+    // 🔄 Se for erro 400 (timeout) e ainda tem tentativas, retry
+    if (errorMsg.includes('400') && errorMsg.includes('muito tempo') && retryCount < MAX_RETRIES - 1) {
+      console.warn(`[ChunkContasPagar] ⚠ Timeout na página ${cursor.page || 1}. Aguardando ${RETRY_DELAY/1000}s para tentar novamente...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return {
+        processed: 0,
+        cursor: { ...cursor, retryCount: retryCount + 1 },
+        done: false,
+      };
+    }
+    
+    // ❌ Após 3 tentativas ou erro diferente, pular esta página
+    if (retryCount >= MAX_RETRIES - 1) {
+      console.error(`[ChunkContasPagar] ❌ Falha após ${MAX_RETRIES} tentativas. Pulando página ${cursor.page || 1}.`);
+      const currentPage = (cursor.page as number) || 1;
+      return {
+        processed: 0,
+        cursor: { page: currentPage + 1, retryCount: 0 },
+        done: false, // Continua para próxima página
+      };
+    }
+    
     console.error(`[ChunkContasPagar] Erro:`, errorMsg);
     return {
       processed: 0,
@@ -313,14 +419,248 @@ export async function processContasPagarChunk(
   }
 }
 
-export async function processContasPagasChunk(): Promise<ChunkResult> {
-  // TODO: Implementar quando API estiver disponível
-  console.log(`[ChunkContasPagas] Não implementado ainda`);
-  return { processed: 0, cursor: {}, done: true };
+/**
+ * Processa um chunk de contas pagas
+ * Busca contas a pagar do período e filtra apenas as que foram pagas
+ */
+export async function processContasPagasChunk(
+  companyId: string,
+  connection: TinyConnection,
+  startDate: Date,
+  endDate: Date,
+  cursor: Record<string, unknown>
+): Promise<ChunkResult> {
+  try {
+    const currentPage = (cursor.page as number) || 1;
+    
+    // ✅ OTIMIZADO: Buscar apenas 7 dias antes (reduzido para evitar timeouts da API Tiny)
+    const searchStartDate = new Date(startDate);
+    searchStartDate.setDate(searchStartDate.getDate() - 7);
+    
+    const dataInicialBusca = searchStartDate.toISOString().split('T')[0];
+    const dataFinalBusca = endDate.toISOString().split('T')[0];
+    const dataInicialFiltro = startDate.toISOString().split('T')[0];
+    const dataFinalFiltro = endDate.toISOString().split('T')[0];
+    
+    console.log(`[ChunkContasPagas] Página ${currentPage}`);
+    console.log(`[ChunkContasPagas] Buscando por vencimento: ${dataInicialBusca} a ${dataFinalBusca}`);
+    console.log(`[ChunkContasPagas] Filtrando por pagamento: ${dataInicialFiltro} a ${dataFinalFiltro}`);
+
+    // Buscar contas a pagar (por data de vencimento)
+    const result = await listContasPagar(connection, {
+      pagina: currentPage,
+      dataInicial: dataInicialBusca,
+      dataFinal: dataFinalBusca,
+    });
+
+    if (!result.itens || result.itens.length === 0) {
+      console.log(`[ChunkContasPagas] ✓ Nenhum item na página ${currentPage}`);
+      return { processed: 0, cursor: {}, done: true };
+    }
+
+    console.log(`[ChunkContasPagas] Analisando ${result.itens.length} contas...`);
+
+    // Processar e salvar apenas as pagas (com enriquecimento de dados)
+    let processed = 0;
+    let skippedNotPaid = 0;
+    let skippedOutOfRange = 0;
+    
+    for (const item of result.itens) {
+      try {
+        // ✅ OTIMIZAÇÃO: Verificar se está paga ANTES de buscar detalhe (evita chamadas desnecessárias)
+        const itemObj = item as Record<string, unknown>;
+        if (itemObj.situacao !== "pago") {
+          skippedNotPaid++;
+          continue; // Pula para o próximo item sem fazer chamada à API
+        }
+        
+        // ✅ ENRIQUECIMENTO: Buscar detalhe completo da conta (inclui categoria, valores corretos, etc)
+        const itemEnriquecido = await getContaPagarDetalhe(connection, item.id);
+        
+        // Delay aumentado para evitar rate limit (429)
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Transformer retorna null se não estiver pago (situacao !== "pago")
+        const contaPagaData = transformContaPagaToView(companyId, itemEnriquecido);
+        
+        if (contaPagaData) {
+          // Filtrar por data de pagamento dentro do período selecionado
+          const dataPagamento = contaPagaData.dataPagamento as Date;
+          const dataPagamentoStr = dataPagamento.toISOString().split('T')[0];
+          
+          if (dataPagamento >= startDate && dataPagamento <= endDate) {
+            console.log(`[ChunkContasPagas] ✓ Conta ${item.id} paga em ${dataPagamentoStr} - ${contaPagaData.fornecedor} - R$ ${contaPagaData.valorPago}`);
+            
+            await prisma.vwContasPagas.upsert({
+              where: { id: contaPagaData.id as string },
+              create: contaPagaData,
+              update: contaPagaData,
+            });
+            processed++;
+          } else {
+            console.log(`[ChunkContasPagas] ⊘ Conta ${item.id} paga fora do período: ${dataPagamentoStr}`);
+            skippedOutOfRange++;
+          }
+        }
+      } catch (err) {
+        console.warn(`[ChunkContasPagas] Erro ao processar conta ${item.id}:`, err);
+      }
+    }
+
+    // ✅ Melhor detecção de paginação (quando API não retorna numero_paginas)
+    const hasMore = result.numero_paginas 
+      ? currentPage < result.numero_paginas 
+      : result.itens.length >= 100; // Se retornou 100 itens, provavelmente tem mais
+    
+    console.log(`[ChunkContasPagas] ✓ Página ${currentPage}/${result.numero_paginas || '?'}: ${processed} salvas | ${skippedNotPaid} não pagas | ${skippedOutOfRange} fora do período`);
+
+    return {
+      processed,
+      cursor: hasMore ? { page: currentPage + 1 } : {},
+      done: !hasMore,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    
+    // ✅ Tratar timeout (400) sem falhar sync inteiro
+    if (errorMsg.includes('400') && errorMsg.includes('tempo')) {
+      console.warn(`[ChunkContasPagas] ⚠️  Timeout da API Tiny - concluindo módulo`);
+      return {
+        processed: 0,
+        cursor: {},
+        done: true, // Marcar como concluído para não travar o sync
+      };
+    }
+    
+    console.error(`[ChunkContasPagas] Erro:`, errorMsg);
+    return {
+      processed: 0,
+      cursor,
+      done: false,
+      error: errorMsg,
+    };
+  }
 }
 
-export async function processContasRecebidasChunk(): Promise<ChunkResult> {
-  // TODO: Implementar quando API estiver disponível
-  console.log(`[ChunkContasRecebidas] Não implementado ainda`);
-  return { processed: 0, cursor: {}, done: true };
+/**
+ * Processa um chunk de contas recebidas
+ * Busca contas a receber do período e filtra apenas as que foram recebidas
+ */
+export async function processContasRecebidasChunk(
+  companyId: string,
+  connection: TinyConnection,
+  startDate: Date,
+  endDate: Date,
+  cursor: Record<string, unknown>
+): Promise<ChunkResult> {
+  try {
+    const currentPage = (cursor.page as number) || 1;
+    
+    // ✅ OTIMIZADO: Buscar apenas 7 dias antes (reduzido para evitar timeouts da API Tiny)
+    const searchStartDate = new Date(startDate);
+    searchStartDate.setDate(searchStartDate.getDate() - 7);
+    
+    const dataInicialBusca = searchStartDate.toISOString().split('T')[0];
+    const dataFinalBusca = endDate.toISOString().split('T')[0];
+    const dataInicialFiltro = startDate.toISOString().split('T')[0];
+    const dataFinalFiltro = endDate.toISOString().split('T')[0];
+    
+    console.log(`[ChunkContasRecebidas] Página ${currentPage}`);
+    console.log(`[ChunkContasRecebidas] Buscando por vencimento: ${dataInicialBusca} a ${dataFinalBusca}`);
+    console.log(`[ChunkContasRecebidas] Filtrando por recebimento: ${dataInicialFiltro} a ${dataFinalFiltro}`);
+
+    // Buscar contas a receber (por data de vencimento)
+    const result = await listContasReceber(connection, {
+      pagina: currentPage,
+      dataInicial: dataInicialBusca,
+      dataFinal: dataFinalBusca,
+    });
+
+    if (!result.itens || result.itens.length === 0) {
+      console.log(`[ChunkContasRecebidas] ✓ Nenhum item na página ${currentPage}`);
+      return { processed: 0, cursor: {}, done: true };
+    }
+
+    console.log(`[ChunkContasRecebidas] Analisando ${result.itens.length} contas...`);
+
+    // Processar e salvar apenas as recebidas (com enriquecimento de dados)
+    let processed = 0;
+    let skippedNotPaid = 0;
+    let skippedOutOfRange = 0;
+    
+    for (const item of result.itens) {
+      try {
+        // ✅ OTIMIZAÇÃO: Verificar se está recebida ANTES de buscar detalhe (evita chamadas desnecessárias)
+        const itemObj = item as Record<string, unknown>;
+        if (itemObj.situacao !== "pago") {
+          skippedNotPaid++;
+          continue; // Pula para o próximo item sem fazer chamada à API
+        }
+        
+        // ✅ ENRIQUECIMENTO: Buscar detalhe completo da conta (inclui categoria, valores corretos, etc)
+        const itemEnriquecido = await getContaReceberDetalhe(connection, item.id);
+        
+        // Delay aumentado para evitar rate limit (429)
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Transformer retorna null se não estiver recebido (situacao !== "pago")
+        const contaRecebidaData = transformContaRecebidaToView(companyId, itemEnriquecido);
+        
+        if (contaRecebidaData) {
+          // Filtrar por data de recebimento dentro do período selecionado
+          const dataRecebimento = contaRecebidaData.dataRecebimento as Date;
+          const dataRecebimentoStr = dataRecebimento.toISOString().split('T')[0];
+          
+          if (dataRecebimento >= startDate && dataRecebimento <= endDate) {
+            console.log(`[ChunkContasRecebidas] ✓ Conta ${item.id} recebida em ${dataRecebimentoStr} - ${contaRecebidaData.cliente} - R$ ${contaRecebidaData.valorRecebido}`);
+            
+            await prisma.vwContasRecebidas.upsert({
+              where: { id: contaRecebidaData.id as string },
+              create: contaRecebidaData,
+              update: contaRecebidaData,
+            });
+            processed++;
+          } else {
+            console.log(`[ChunkContasRecebidas] ⊘ Conta ${item.id} recebida fora do período: ${dataRecebimentoStr}`);
+            skippedOutOfRange++;
+          }
+        }
+      } catch (err) {
+        console.warn(`[ChunkContasRecebidas] Erro ao processar conta ${item.id}:`, err);
+      }
+    }
+
+    // ✅ Melhor detecção de paginação (quando API não retorna numero_paginas)
+    const hasMore = result.numero_paginas 
+      ? currentPage < result.numero_paginas 
+      : result.itens.length >= 100; // Se retornou 100 itens, provavelmente tem mais
+    
+    console.log(`[ChunkContasRecebidas] ✓ Página ${currentPage}/${result.numero_paginas || '?'}: ${processed} salvas | ${skippedNotPaid} não pagas | ${skippedOutOfRange} fora do período`);
+
+    return {
+      processed,
+      cursor: hasMore ? { page: currentPage + 1 } : {},
+      done: !hasMore,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    
+    // ✅ Tratar timeout (400) sem falhar sync inteiro
+    if (errorMsg.includes('400') && errorMsg.includes('tempo')) {
+      console.warn(`[ChunkContasRecebidas] ⚠️  Timeout da API Tiny - concluindo módulo`);
+      return {
+        processed: 0,
+        cursor: {},
+        done: true, // Marcar como concluído para não travar o sync
+      };
+    }
+    
+    console.error(`[ChunkContasRecebidas] Erro:`, errorMsg);
+    return {
+      processed: 0,
+      cursor,
+      done: false,
+      error: errorMsg,
+    };
+  }
 }

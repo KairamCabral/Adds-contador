@@ -371,7 +371,25 @@ export function transformPedidoDetalheToVendas(
     // Preferir caminhoCompleto (mais descritivo), fallback para nome
     let categoria = "N/D";
     
-    if (enrichData?.produtos && produtoId) {
+    // PRIORIDADE 1: Buscar categoria diretamente de item.produto.categoria (já enriquecido no chunk-executor)
+    const categoriaObj = getPathFirst(item, [
+      ["produto", "categoria"]
+    ]) as { descricao?: string; caminho_completo?: string; nome?: string; caminhoCompleto?: string } | undefined;
+    
+    if (categoriaObj) {
+      // Preferir caminho completo ou descrição
+      if (categoriaObj.caminho_completo) {
+        categoria = categoriaObj.caminho_completo;
+      } else if (categoriaObj.caminhoCompleto) {
+        categoria = categoriaObj.caminhoCompleto;
+      } else if (categoriaObj.descricao) {
+        categoria = categoriaObj.descricao;
+      } else if (categoriaObj.nome) {
+        categoria = categoriaObj.nome;
+      }
+    }
+    // PRIORIDADE 2: Buscar no enrichData (compatibilidade com código legado)
+    else if (enrichData?.produtos && produtoId) {
       const produtoEnriquecido = enrichData.produtos.get(Number(produtoId));
       if (produtoEnriquecido && typeof produtoEnriquecido === 'object' && produtoEnriquecido !== null) {
         const cat = (produtoEnriquecido as Record<string, unknown>).categoria as { 
@@ -541,11 +559,13 @@ export function transformContaReceberToPosicao(
   
   // Categoria: API Tiny retorna objeto {id, descricao} quando existe, ou null quando não tem
   // Endpoint relacionado: /categorias-receita-despesa
+  console.log("[Transformer] Conta Receber - Raw categoria:", JSON.stringify(contaObj.categoria));
   const categoriaObj = contaObj.categoria as Record<string, unknown> | null;
   let categoria = "N/D";
   if (categoriaObj && typeof categoriaObj === 'object' && categoriaObj.descricao) {
     categoria = String(categoriaObj.descricao);
   }
+  console.log("[Transformer] Conta Receber - Categoria extraída:", categoria);
   
   // Centro de Custo: campo não existe na API Tiny para contas a receber
   const centroCusto = null;
@@ -588,6 +608,7 @@ export function transformContaPagarToView(
   const fornecedor = typeof fornecedorNome === 'string' && fornecedorNome.trim() ? fornecedorNome.trim() : "N/D";
   
   // Categoria: Tentar extrair quando existe, senão "N/D"
+  console.log("[Transformer] Conta Pagar - Raw categoria:", JSON.stringify(contaObj.categoria));
   const categoriaObj = contaObj.categoria as { id?: number; descricao?: string; nome?: string } | string | undefined;
   let categoria = "N/D";
   if (typeof categoriaObj === 'object' && categoriaObj) {
@@ -597,6 +618,7 @@ export function transformContaPagarToView(
     // String simples
     categoria = categoriaObj.trim();
   }
+  console.log("[Transformer] Conta Pagar - Categoria extraída:", categoria);
   
   // Centro de Custo: Tentar extrair quando existe
   const centroCustoObj = contaObj.centroCusto || contaObj.centro_custo;

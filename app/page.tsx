@@ -72,6 +72,32 @@ export default async function Home() {
             </Link>
 
             <Link
+              href="/relatorios/vw_contas_recebidas"
+              className="group flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800 p-4 transition-all hover:border-teal-500 hover:bg-slate-750"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-600 text-xl group-hover:bg-teal-500">
+                ✅
+              </div>
+              <div>
+                <h3 className="font-semibold">Contas Recebidas</h3>
+                <p className="text-xs text-slate-400">Ver contas recebidas</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/relatorios/vw_contas_pagas"
+              className="group flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800 p-4 transition-all hover:border-rose-500 hover:bg-slate-750"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-600 text-xl group-hover:bg-rose-500">
+                ✔️
+              </div>
+              <div>
+                <h3 className="font-semibold">Contas Pagas</h3>
+                <p className="text-xs text-slate-400">Ver contas pagas</p>
+              </div>
+            </Link>
+
+            <Link
               href="/relatorios/vw_estoque"
               className="group flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800 p-4 transition-all hover:border-purple-500 hover:bg-slate-750"
             >

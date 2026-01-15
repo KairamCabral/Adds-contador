@@ -166,84 +166,110 @@ export default async function ReportPage({
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-slate-50">
-      {/* Header Fixo com Controles */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur-lg shadow-lg">
-        {/* Barra Superior - Logo, Título e Ações */}
+      {/* Header Fixo com Controles - Compacto e Responsivo */}
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 backdrop-blur-lg shadow-lg">
+        {/* Barra Superior - Logo, Título e Ações - Uma Linha Horizontal */}
         <div className="border-b border-slate-800/50 bg-gradient-to-r from-slate-900/50 to-slate-950/50">
-          <div className="mx-auto max-w-[1920px] px-6">
-            <div className="flex items-center justify-between py-4">
+          <div className="mx-auto max-w-[1920px] px-4 sm:px-6">
+            <div className="flex items-center justify-between gap-3 py-2">
               
-              {/* Lado Esquerdo: Logo + Info do Relatório */}
-              <div className="flex items-center gap-6">
-                {/* Logo */}
-                <div className="flex-shrink-0">
+              {/* Lado Esquerdo: Logo + Título + Status Compacto */}
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                {/* Logo (clicável para home) */}
+                <a href="/" className="flex-shrink-0 transition-opacity hover:opacity-80" title="Voltar para a página inicial">
                   <Image 
                     src="/Logo-cor-adds.webp" 
                     alt="ADDS"
-                    width={140}
-                    height={36}
+                    width={100}
+                    height={26}
                     priority
-                    className="h-9 w-auto"
+                    className="h-6 sm:h-7 w-auto"
                   />
-                </div>
+                </a>
                 
                 {/* Divider */}
-                <div className="h-10 w-px bg-slate-700/50" />
+                <div className="hidden sm:block h-8 w-px bg-slate-700/50" />
                 
-                {/* Info do Relatório */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
-                      <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
+                {/* Título + Ícone Inline */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm flex-shrink-0">
+                    <svg className="h-3.5 w-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <h1 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">{config.title}</h1>
+                </div>
+                
+                {/* Status Conexão + Última Sync - Horizontal inline */}
+                <div className="hidden lg:flex items-center gap-2 text-xs flex-shrink-0">
+                  {/* Status Conexão */}
+                  {!tinyConnection ? (
+                    <div className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 border border-amber-500/20">
+                      <div className="h-1 w-1 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="text-[10px] font-medium text-amber-400">
+                        <a href="/admin/conexoes-tiny" className="hover:text-amber-300 transition-colors">
+                          Conectar
+                        </a>
+                      </span>
                     </div>
-                    <h1 className="text-xl font-bold text-white tracking-tight">{config.title}</h1>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20">
+                      <div className="h-1 w-1 rounded-full bg-emerald-400" />
+                      <span className="text-[10px] font-medium text-emerald-400">OK</span>
+                    </div>
+                  )}
                   
-                  {/* Status e Última Sync */}
-                  <div className="flex items-center gap-3 text-xs">
-                    {/* Status Conexão */}
-                    {!tinyConnection ? (
-                      <div className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 border border-amber-500/20">
-                        <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                        <span className="font-medium text-amber-400">
-                          <a href="/admin/conexoes-tiny" className="hover:text-amber-300 transition-colors">
-                            Conectar Tiny
-                          </a>
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 border border-emerald-500/20">
-                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        <span className="font-medium text-emerald-400">Conectado</span>
-                      </div>
-                    )}
-                    
-                    {/* Última Sincronização */}
-                    {lastSync && lastSync.startedAt && (
-                      <div className="flex items-center gap-1.5 text-slate-400">
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="font-medium">
-                          Última sync: {new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
-                            day: "2-digit", 
-                            month: "2-digit",
-                            year: "2-digit",
-                            hour: "2-digit", 
-                            minute: "2-digit" 
-                          })}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  {/* Última Sync */}
+                  {lastSync && lastSync.startedAt && (
+                    <div className="flex items-center gap-1 text-slate-400">
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-[10px] font-medium">
+                        {new Date(lastSync.startedAt).toLocaleString("pt-BR", { 
+                          day: "2-digit", 
+                          month: "2-digit",
+                          hour: "2-digit", 
+                          minute: "2-digit" 
+                        })}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Lado Direito: Ações */}
-              <div className="flex items-center gap-3">
-                {/* Sincronização V2 (Resumable) */}
+              {/* Lado Direito: Home + Sync + Logout - Horizontal compacto */}
+              <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                {/* Botão Home */}
+                <a
+                  href="/"
+                  className="flex items-center gap-1.5 rounded-md border border-slate-600/50 bg-slate-800/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-all hover:bg-slate-700/60 hover:text-white hover:border-slate-500"
+                  title="Voltar para home"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                  <span className="hidden sm:inline">Home</span>
+                </a>
+
+                {/* Botão Conexão Tiny (se não conectado) */}
+                {!tinyConnection && (
+                  <a
+                    href="/admin/conexoes-tiny"
+                    className="flex items-center gap-1.5 rounded-md border border-amber-600/50 bg-amber-600/10 px-2.5 py-1.5 text-xs font-medium text-amber-400 transition-all hover:bg-amber-600/20 hover:border-amber-500"
+                    title="Conectar ao Tiny ERP"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span className="hidden sm:inline">Conectar</span>
+                  </a>
+                )}
+
+                {/* Divider */}
+                <div className="hidden sm:block h-6 w-px bg-slate-700/50" />
+
+                {/* Sincronização V2 (já horizontal) */}
                 <SyncControlsV2
                   companyId={selectedCompanyId}
                   lastSync={
@@ -257,7 +283,7 @@ export default async function ReportPage({
                 />
 
                 {/* Divider */}
-                <div className="h-8 w-px bg-slate-700/50" />
+                <div className="hidden sm:block h-6 w-px bg-slate-700/50" />
 
                 {/* Logout */}
                 <LogoutButton />

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, CheckCircle2, AlertCircle, Loader2, XCircle, Clock, Zap } from "lucide-react";
 
 interface SyncProgressModalProps {
@@ -43,7 +44,8 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [currentModule, setCurrentModule] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isExecuting, setIsExecuting] = useState(false);
+  // ✅ Usar ref para lock atômico (previne race condition)
+  const isExecutingRef = useRef(false);
 
   // Buscar status
   const fetchStatus = useCallback(async () => {
@@ -53,11 +55,46 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
 
       if (data.success) {
         setStatus(data.run.status);
-        // Corrigir: progressJson é o objeto com módulos
-        setProgress(data.run.progressJson || { modules: {} });
         setCurrentModule(data.run.currentModule);
         setLogs(data.logs || []);
         setError(data.run.errorMessage);
+
+        // Construir progresso com status dos módulos
+        const progressData = data.run.progressJson || {};
+        const modules: Record<string, ModuleProgress> = {};
+        
+        // DEBUG: Ver o que está chegando
+        console.log("[Modal] Status recebido:", {
+          modules: data.run.modules,
+          moduleIndex: data.run.moduleIndex,
+          currentModule: data.run.currentModule,
+          progressJson: data.run.progressJson,
+        });
+        
+        // Para cada módulo configurado, determinar status
+        const allModules = data.run.modules || [];
+        const currentIndex = data.run.moduleIndex || 0;
+        
+        allModules.forEach((moduleName: string, index: number) => {
+          let moduleStatus: ModuleProgress["status"];
+          
+          if (data.run.status === "DONE" || index < currentIndex) {
+            moduleStatus = "done";
+          } else if (moduleName === data.run.currentModule && data.run.status === "RUNNING") {
+            moduleStatus = "running";
+          } else if (data.run.status === "FAILED" && moduleName === data.run.currentModule) {
+            moduleStatus = "failed";
+          } else {
+            moduleStatus = "pending";
+          }
+          
+          modules[moduleName] = {
+            status: moduleStatus,
+            processed: progressData[moduleName]?.processed || 0,
+          };
+        });
+        
+        setProgress({ modules });
       }
     } catch (err) {
       console.error("Erro ao buscar status:", err);
@@ -66,9 +103,13 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
 
   // Executar um passo
   const executeStep = useCallback(async () => {
-    if (isExecuting) return;
+    // ✅ Lock atômico usando ref (previne race condition)
+    if (isExecutingRef.current) {
+      console.log('⚠️ Step já está executando, ignorando chamada duplicada');
+      return;
+    }
 
-    setIsExecuting(true);
+    isExecutingRef.current = true;
     try {
       const res = await fetch("/api/admin/sync/v2/step", {
         method: "POST",
@@ -80,20 +121,37 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
 
       if (data.success) {
         setStatus(data.status);
-        setProgress(data.progress);
         setCurrentModule(data.currentModule);
 
-        // Se ainda há trabalho, executar próximo passo
-        if (data.hasMore && data.status === "RUNNING") {
-          setTimeout(() => executeStep(), 1000);
+        // Buscar status atualizado para pegar progressJson
+        await fetchStatus();
+
+        // Continuar executando enquanto houver trabalho E status for RUNNING
+        if (data.status === "RUNNING") {
+          // Verificar se há mais módulos ou chunks
+          if (data.hasMore !== false) {
+            setTimeout(() => executeStep(), 1000);
+          } else {
+            // Mesmo se hasMore=false, verificar se há próximo módulo
+            setTimeout(() => executeStep(), 500);
+          }
+        } else if (data.status === "DONE") {
+          // Buscar status final
+          await fetchStatus();
         }
+      } else if (data.error) {
+        setError(data.error);
+        setStatus("FAILED");
       }
     } catch (err) {
-      console.error("Erro ao executar passo:", err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error("Erro ao executar passo:", errorMsg);
+      setError(errorMsg);
+      setStatus("FAILED");
     } finally {
-      setIsExecuting(false);
+      isExecutingRef.current = false;
     }
-  }, [runId, isExecuting]);
+  }, [runId, fetchStatus]); // ✅ Removido isExecuting das dependências
 
   // Iniciar sync
   const startSync = useCallback(async () => {
@@ -130,6 +188,11 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
       console.error("Erro ao cancelar sync:", err);
     }
   }, [runId, fetchStatus]);
+
+  // Buscar status inicial quando modal abre
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
 
   // Iniciar sync quando modal abre
   useEffect(() => {
@@ -170,11 +233,35 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
     0
   );
 
+  // DEBUG: Ver o que está sendo renderizado
+  console.log("[Modal] Renderização:", {
+    moduleKeys,
+    modules,
+    totalProcessed,
+    progress,
+  });
+
   const isDone = status === "DONE" || status === "FAILED" || status === "CANCELED";
 
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-gradient-to-b from-slate-50 to-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col border border-slate-200 animate-in slide-in-from-bottom-4 duration-300">
+  // Verificar se está no cliente
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+    // Bloquear scroll do body quando modal está aberto
+    document.body.style.overflow = "hidden";
+    
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, []);
+
+  if (!mounted) return null;
+
+  const modalContent = (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200" style={{ zIndex: 99999 }}>
+      <div className="relative min-h-full flex items-center justify-center p-4 py-8">
+        <div className="relative bg-gradient-to-b from-slate-50 to-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[calc(100vh-4rem)] flex flex-col border border-slate-200 animate-in slide-in-from-bottom-4 duration-300">
         {/* Header com Gradiente */}
         <div className="relative overflow-hidden rounded-t-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 p-6 text-white">
           {/* Padrão de fundo */}
@@ -418,6 +505,9 @@ export function SyncProgressModal({ runId, onClose }: SyncProgressModalProps) {
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
