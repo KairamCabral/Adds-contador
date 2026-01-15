@@ -1,0 +1,246 @@
+---
+description: "Boas práticas para evitar erros de deploy - baseado em erros reais encontrados"
+alwaysApply: true
+---
+
+# 🚀 BOAS PRÁTICAS PARA DEPLOY (VERCEL)
+
+## 📋 CHECKLIST PRÉ-COMMIT
+
+Antes de fazer commit, SEMPRE verificar:
+
+```bash
+# 1. Linter (ESLint)
+npm run lint
+
+# 2. Type checking (TypeScript)
+npx tsc --noEmit
+
+# 3. Build local
+npm run build
+```
+
+---
+
+## ❌ ERROS COMUNS E COMO EVITAR
+
+### 1️⃣ **Links Internos (`<a>` vs `<Link>`)**
+
+**❌ ERRADO:**
+```tsx
+<a href="/">Home</a>
+<a href="/dashboard">Dashboard</a>
+```
+
+**✅ CORRETO:**
+```tsx
+import Link from "next/link";
+
+<Link href="/">Home</Link>
+<Link href="/dashboard">Dashboard</Link>
+```
+
+**Regra:** NUNCA usar `<a>` para navegação interna no Next.js. Sempre usar `<Link>` do `next/link`.
+
+---
+
+### 2️⃣ **Variáveis Não Utilizadas**
+
+**❌ ERRADO:**
+```tsx
+function Component({ data, unused }: Props) {
+  return <div>{data}</div>;
+}
+```
+
+**✅ CORRETO:**
+```tsx
+// Opção 1: Remover parâmetro não usado
+function Component({ data }: Props) {
+  return <div>{data}</div>;
+}
+
+// Opção 2: Usar underscore se for necessário na interface
+function Component({ data, _unused }: Props) {
+  return <div>{data}</div>;
+}
+```
+
+**Regra:** ESLint falha em build se houver variáveis/parâmetros definidos mas não usados.
+
+---
+
+### 3️⃣ **Tipagem TypeScript (`unknown` e Type Assertions)**
+
+**❌ ERRADO:**
+```tsx
+let data = item; // TypeScript infere tipo de 'item'
+const apiData = await fetchData(); // retorna 'unknown'
+data = apiData; // ERRO: Type 'unknown' is not assignable
+```
+
+**✅ CORRETO:**
+```tsx
+// Opção 1: Tipar explicitamente como 'unknown'
+let data: unknown = item;
+const apiData = await fetchData();
+data = apiData; // ✅ OK
+
+// Opção 2: Type assertion (use com cuidado)
+let data = item;
+const apiData = await fetchData() as typeof item;
+data = apiData; // ✅ OK
+```
+
+**Regra:** Quando uma variável pode receber valores de tipos diferentes, declare explicitamente como `unknown`.
+
+---
+
+### 4️⃣ **Imports Faltando**
+
+**❌ ERRADO:**
+```tsx
+// Esqueceu de importar Link
+export default function Page() {
+  return <Link href="/">Home</Link>; // ERRO
+}
+```
+
+**✅ CORRETO:**
+```tsx
+import Link from "next/link";
+
+export default function Page() {
+  return <Link href="/">Home</Link>;
+}
+```
+
+**Regra:** Sempre verificar imports ao usar componentes do Next.js (`Link`, `Image`, `useRouter`, etc).
+
+---
+
+### 5️⃣ **Prisma Schema + Build**
+
+**⚠️ ATENÇÃO:**
+- Sempre rodar `npx prisma generate` após mudar `schema.prisma`
+- Build falha se o schema não estiver sincronizado
+- `package.json` já tem `"postinstall": "prisma generate"` para Vercel
+
+**Comando após mudar schema:**
+```bash
+npx prisma generate
+```
+
+---
+
+### 6️⃣ **ESLint Config (`.eslintignore` deprecated)**
+
+**❌ OBSOLETO:**
+```
+# .eslintignore (não funciona mais)
+node_modules
+.next
+```
+
+**✅ CORRETO:**
+```javascript
+// eslint.config.mjs
+export default [
+  {
+    ignores: ['node_modules/**', '.next/**', 'out/**']
+  },
+  ...otherConfigs
+];
+```
+
+**Regra:** Usar `ignores` no `eslint.config.mjs` ao invés de `.eslintignore`.
+
+---
+
+## 🔧 CONFIGURAÇÃO DO PROJETO
+
+### ESLint Strict
+```javascript
+// eslint.config.mjs
+const eslintConfig = [
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      '@next/next/no-html-link-for-pages': 'error', // ✅ Ativo
+      '@typescript-eslint/no-unused-vars': 'error',  // ✅ Ativo
+    }
+  }
+];
+```
+
+### TypeScript Strict
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  }
+}
+```
+
+---
+
+## 🎯 WORKFLOW RECOMENDADO
+
+### Antes de Commit:
+1. ✅ Rodar `npm run lint` (sem erros)
+2. ✅ Rodar `npx tsc --noEmit` (sem erros)
+3. ✅ Testar localmente (`npm run dev`)
+4. ✅ Build local (`npm run build`) se possível
+
+### Após Commit:
+1. 🔍 Verificar logs do GitHub Actions (se houver)
+2. 🚀 Aguardar build da Vercel
+3. ⚠️ Se falhar, analisar logs e corrigir
+
+---
+
+## 📝 RESUMO DOS ERROS HISTÓRICOS
+
+| Data | Erro | Causa | Correção |
+|------|------|-------|----------|
+| 2026-01-15 | `no-html-link-for-pages` | Usado `<a>` ao invés de `<Link>` | Substituir por `<Link>` |
+| 2026-01-15 | `no-unused-vars` | Parâmetro `lastSync` não usado | Remover parâmetro |
+| 2026-01-15 | Type error `unknown` | Tipagem implícita incorreta | Declarar `contaComDetalhe: unknown` |
+
+---
+
+## 🚨 REGRAS DE OURO
+
+1. **SEMPRE** usar `<Link>` para navegação interna
+2. **NUNCA** deixar variáveis/imports não utilizados
+3. **SEMPRE** tipar explicitamente quando há ambiguidade
+4. **SEMPRE** testar build local antes de push
+5. **NUNCA** commitar com erros de lint/typecheck
+
+---
+
+## 🛠️ FERRAMENTAS ÚTEIS
+
+### VS Code Extensions
+- ESLint
+- TypeScript and JavaScript Language Features
+- Error Lens (mostra erros inline)
+
+### Git Hooks (opcional)
+```json
+// package.json
+{
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run lint && tsc --noEmit"
+    }
+  }
+}
+```
+
+---
+
+**🎯 Objetivo:** Zero erros de build na Vercel!
